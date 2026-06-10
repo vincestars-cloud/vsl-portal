@@ -61,6 +61,15 @@ def process():
         dirs.append(ingest(r)); print()
     return dirs
 
+def notify():
+    nr = new_requests()
+    if not nr: return
+    names = ", ".join((r.get("video_name") or "?") for r in nr[:3])
+    msg = f"{len(nr)} new edit request(s): {names}"
+    subprocess.run(["osascript", "-e",
+                    f'display notification "{msg}" with title "VSL Edit Portal" sound name "Glass"'])
+    print(msg)
+
 def done(rid, path):
     name = os.path.basename(path)
     subprocess.run(["rclone", "copy", path, REMOTE, "--drive-root-folder-id", DONE_FOLDER_ID], check=True)
@@ -76,6 +85,7 @@ if __name__ == "__main__":
         print("No new requests." if not nr else
               "\n".join(f"{r['id']}  {r.get('video_name')}  [{r.get('change_type')}]  {r.get('notes')}" for r in nr))
     elif a[0] == "process": process()
+    elif a[0] == "notify": notify()
     elif a[0] == "done" and len(a) > 2: done(a[1], a[2])
     elif a[0] == "update" and len(a) > 2: update(*a[1:])
     else: print(__doc__)
