@@ -11,7 +11,7 @@ Downloads/uploads use rclone remote `gdrive` (5GB-safe). Falls back to gdown for
 """
 import os, sys, json, subprocess, urllib.request
 
-API = os.environ.get("VSL_API") or "PASTE_APPS_SCRIPT_EXEC_URL_HERE"
+API = os.environ.get("VSL_API") or "https://script.google.com/macros/s/AKfycbxXa000IF-BPEiF5j9vT1UWd9TNpORow0-XYnlWX2pQXAm7Pf_EEpzZRqDqfkOgXxcw/exec"
 WORKDIR = os.path.expanduser("~/vsl-edit/inbox")
 RCLONE_REMOTE = "gdrive"  # rclone config remote name
 
