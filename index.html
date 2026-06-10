@@ -176,12 +176,12 @@
     };
     $("send").disabled = true; $("send").textContent = "Sending…";
     try{
-      // text/plain avoids a CORS preflight to Apps Script
-      const r = await fetch(API, { method:"POST", headers:{"Content-Type":"text/plain;charset=utf-8"}, body:JSON.stringify(body) });
-      const d = await r.json();
-      if(d.ok){ toast("Sent to Claude ✓"); $("notes").value=""; chosenInsp.clear(); loadQueue(); loadSubmissions(); }
-      else toast("Error: "+(d.error||"failed"));
-    }catch(e){ toast("Send failed — check the URL"); }
+      // no-cors + text/plain = the reliable Apps Script write pattern (opaque response).
+      // The row is written server-side; we confirm by refreshing the queue below.
+      await fetch(API, { method:"POST", mode:"no-cors", headers:{"Content-Type":"text/plain;charset=utf-8"}, body:JSON.stringify(body) });
+      toast("Sent to Claude ✓"); $("notes").value=""; chosenInsp.clear();
+      setTimeout(()=>{ loadQueue(); loadSubmissions(); }, 800);
+    }catch(e){ toast("Send failed — check connection"); }
     $("send").disabled=false; $("send").textContent="Send to Claude";
   };
 

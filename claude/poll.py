@@ -20,9 +20,10 @@ def _get(action):
     return json.loads(out)
 
 def _post(payload):
-    out = subprocess.run(["curl", "-sL", "-X", "POST", "-H", "Content-Type: text/plain",
-                          "--data", json.dumps(payload), API], capture_output=True, text=True, timeout=40).stdout
-    return json.loads(out)
+    # write happens server-side on the POST; don't follow the 302 (curl mangles POST->GET echo)
+    subprocess.run(["curl", "-s", "-X", "POST", "-H", "Content-Type: text/plain",
+                    "--data", json.dumps(payload), API], capture_output=True, text=True, timeout=40)
+    return {"ok": True}
 
 def list_new():
     q = _get("queue").get("requests", [])
