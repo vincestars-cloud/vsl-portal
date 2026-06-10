@@ -57,6 +57,38 @@ function setup() {
   return out;
 }
 
+// ===== 24/7 email notifier — runs on Google's servers, works even if your Mac sleeps =====
+const NOTIFY_EMAIL = 'starsvince@gmail.com';   // <- change to your preferred address
+
+// Run ONCE (like setup) to install the every-5-min checker. Authorize email when prompted.
+function installNotifier() {
+  ScriptApp.getProjectTriggers().forEach(t => {
+    if (t.getHandlerFunction() === 'checkAndNotify') ScriptApp.deleteTrigger(t);
+  });
+  ScriptApp.newTrigger('checkAndNotify').timeBased().everyMinutes(5).create();
+  Logger.log('Notifier installed — emails ' + NOTIFY_EMAIL + ' on new requests.');
+  return 'ok';
+}
+
+function checkAndNotify() {
+  const notified = JSON.parse(PROPS.getProperty('NOTIFIED') || '[]');
+  const seen = {}; notified.forEach(x => seen[x] = 1);
+  const rows = sheet_().getDataRange().getValues(); rows.shift();
+  const fresh = rows.filter(r => r[8] === 'new' && !seen[r[0]]); // col8=status, col0=id
+  if (!fresh.length) return;
+  fresh.forEach(r => {
+    MailApp.sendEmail(NOTIFY_EMAIL,
+      'New VSL edit request: ' + (r[3] || 'video'),
+      'Video: '       + (r[3] || '') +
+      '\nNeeds: '      + (r[6] || '') +
+      '\nInspiration: '+ (r[5] || '(none)') +
+      '\nNotes: '      + (r[7] || '') +
+      '\n\nPortal: https://vincestars-cloud.github.io/vsl-portal/');
+    notified.push(r[0]);
+  });
+  PROPS.setProperty('NOTIFIED', JSON.stringify(notified.slice(-300)));
+}
+
 function doGet(e) {
   const action = (e && e.parameter && e.parameter.action) || 'list';
   if (action === 'completions') return json_({ ok: true, files: filesIn_(DriveApp.getFolderById(PROPS.getProperty('DONE_FOLDER_ID'))) });
