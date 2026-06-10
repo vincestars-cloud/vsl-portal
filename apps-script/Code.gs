@@ -59,9 +59,9 @@ function setup() {
 
 function doGet(e) {
   const action = (e && e.parameter && e.parameter.action) || 'list';
-  if (action === 'completions') return json_(listFolder_('DONE_FOLDER_ID', false));
+  if (action === 'completions') return json_({ ok: true, files: filesIn_(DriveApp.getFolderById(PROPS.getProperty('DONE_FOLDER_ID'))) });
   if (action === 'queue')       return json_(getQueue_());
-  return json_(listFolder_('SUBMIT_FOLDER_ID', true)); // submissions (default)
+  return json_(listSubmissions_()); // submissions (default)
 }
 
 function doPost(e) {
@@ -80,21 +80,41 @@ function doPost(e) {
   } catch (err) { return json_({ ok: false, error: String(err) }); }
 }
 
-function listFolder_(propKey, splitVideos) {
-  const folder = DriveApp.getFolderById(PROPS.getProperty(propKey));
-  const it = folder.getFiles(); const files = [];
-  while (it.hasNext()) {
-    const f = it.next();
-    files.push({
-      id: f.getId(), name: f.getName(), mime: f.getMimeType(),
-      size: f.getSize(), modified: f.getLastUpdated().toISOString(),
-      url: f.getUrl(),
-      isVideo: f.getMimeType().indexOf('video') === 0 || VIDEO_RE.test(f.getName())
-    });
+function fileObj_(f) {
+  return {
+    id: f.getId(), name: f.getName(), mime: f.getMimeType(),
+    size: f.getSize(), modified: f.getLastUpdated().toISOString(), url: f.getUrl(),
+    isVideo: f.getMimeType().indexOf('video') === 0 || VIDEO_RE.test(f.getName())
+  };
+}
+
+function filesIn_(folder) {
+  const it = folder.getFiles(); const out = [];
+  while (it.hasNext()) out.push(fileObj_(it.next()));
+  return out.sort((a, b) => b.modified.localeCompare(a.modified));
+}
+
+// Inspiration files saved in subfolders (e.g. Assets/Inspiration), up to `depth` levels deep.
+function subInspiration_(folder, depth) {
+  if (depth <= 0) return [];
+  let res = []; const fit = folder.getFolders();
+  while (fit.hasNext()) {
+    const sf = fit.next();
+    filesIn_(sf).forEach(o => { o.lib = sf.getName(); res.push(o); });
+    res = res.concat(subInspiration_(sf, depth - 1));
   }
-  files.sort((a, b) => b.modified.localeCompare(a.modified));
-  if (!splitVideos) return { ok: true, files: files };
-  return { ok: true, videos: files.filter(f => f.isVideo), inspiration: files.filter(f => !f.isVideo) };
+  return res;
+}
+
+function listSubmissions_() {
+  const sub = DriveApp.getFolderById(PROPS.getProperty('SUBMIT_FOLDER_ID'));
+  const direct = filesIn_(sub);
+  const lib = subInspiration_(sub, 2); // auto-includes Assets/Inspiration & any other subfolder
+  return {
+    ok: true,
+    videos: direct.filter(f => f.isVideo),
+    inspiration: direct.filter(f => !f.isVideo).concat(lib)
+  };
 }
 
 function sheet_() { return SpreadsheetApp.openById(PROPS.getProperty('SHEET_ID')).getSheetByName('requests'); }

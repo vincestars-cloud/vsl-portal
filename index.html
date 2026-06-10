@@ -127,7 +127,7 @@
     const target = $("video").value;
     const files = (window._allFiles||[]).filter(f=>f.id!==target);
     $("inspRow").style.display = files.length ? "block" : "none";
-    $("insp").innerHTML = files.map(f=>`<label class="chip ${chosenInsp.has(f.id)?'on':''}"><input type="checkbox" value="${f.id}" data-name="${f.name.replace(/"/g,'&quot;')}" ${chosenInsp.has(f.id)?'checked':''}> ${f.isVideo?'🎬 ':''}${f.name}</label>`).join("");
+    $("insp").innerHTML = files.map(f=>`<label class="chip ${chosenInsp.has(f.id)?'on':''}"><input type="checkbox" value="${f.id}" data-name="${f.name.replace(/"/g,'&quot;')}" ${chosenInsp.has(f.id)?'checked':''}> ${f.isVideo?'🎬 ':''}${f.name}${f.lib?` <span style="color:#94A3B8;font-weight:600">· ${f.lib}</span>`:''}</label>`).join("");
     $("insp").querySelectorAll("input").forEach(cb=>cb.onchange=()=>{ cb.checked?chosenInsp.add(cb.value):chosenInsp.delete(cb.value); cb.closest(".chip").classList.toggle("on",cb.checked); });
   }
   document.addEventListener("DOMContentLoaded",()=>{ $("video").onchange = ()=>{ chosenInsp.delete($("video").value); renderInsp(); }; });
