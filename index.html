@@ -125,7 +125,7 @@
   </div>
 
   <div class="card">
-    <div class="head"><h2>Recent requests</h2></div>
+    <div class="head"><h2>History</h2><span style="font-size:12px;font-weight:600;color:var(--slate)">↻ Reuse to refill the form</span></div>
     <div id="queue"><div class="empty">No requests yet.</div></div>
   </div>
 </div>
@@ -212,11 +212,23 @@
     if(API.startsWith("PASTE")) return;
     try{
       const d = await (await fetch(API+"?action=queue&t="+Date.now())).json();
+      window._queue = d.requests||[];
       const el=$("queue");
-      el.innerHTML = (d.requests&&d.requests.length)
-        ? d.requests.slice(0,8).map(q=>`<div class="item"><div><div class="nm">${q.video_name||'(video)'}</div><div class="meta">${q.change_type} · ${ago(q.created)}</div></div><span class="pill ${q.status}">${q.status}</span></div>`).join("")
+      el.innerHTML = (window._queue.length)
+        ? window._queue.slice(0,12).map(q=>`<div class="item"><div style="min-width:0"><div class="nm">${q.video_name||'(video)'}</div><div class="meta" style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${q.change_type} · ${ago(q.created)}${q.notes?' · '+q.notes:''}</div></div><div style="display:flex;align-items:center;gap:14px;flex:none"><a href="#" data-reuse="${q.id}">↻ Reuse</a><span class="pill ${q.status}">${q.status}</span></div></div>`).join("")
         : `<div class="empty">No requests yet.</div>`;
+      el.querySelectorAll("[data-reuse]").forEach(a=>a.onclick=ev=>{ ev.preventDefault(); reuse(a.dataset.reuse); });
     }catch(e){}
+  }
+
+  // pre-fill the form from a past request (version-history reuse)
+  function reuse(id){
+    const q=(window._queue||[]).find(r=>r.id===id); if(!q) return;
+    const sel=$("video"); if(q.video_id && [...sel.options].some(o=>o.value===q.video_id)) sel.value=q.video_id;
+    chosenInsp=new Set((q.inspiration_ids||"").split(",").filter(Boolean));
+    const ch=$("change"); if(q.change_type && [...ch.options].some(o=>o.value===q.change_type)) ch.value=q.change_type;
+    $("notes").value=q.notes||"";
+    refreshInsp(); window.scrollTo({top:0,behavior:"smooth"}); toast("Loaded — tweak & resend");
   }
 
   $("send").onclick = async () => {

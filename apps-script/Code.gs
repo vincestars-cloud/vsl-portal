@@ -76,6 +76,12 @@ function doPost(e) {
       (b.inspiration_ids || []).join(','), (b.inspiration_names || []).join(' | '),
       b.change_type || '', b.notes || '', 'new', '', ''
     ]);
+    // clean, human-readable version history (separate tab)
+    histSheet_().appendRow([
+      new Date().toISOString().slice(0, 16).replace('T', ' '),
+      b.video_name || '', (b.inspiration_names || []).join(', '),
+      b.change_type || '', b.notes || '', '', 'new', id
+    ]);
     return json_({ ok: true, id: id });
   } catch (err) { return json_({ ok: false, error: String(err) }); }
 }
@@ -131,6 +137,24 @@ function listSubmissions_() {
 
 function sheet_() { return SpreadsheetApp.openById(PROPS.getProperty('SHEET_ID')).getSheetByName('requests'); }
 
+// Clean version-history tab (auto-created on first submit): Date | Video | Inspirations | Needs | Notes | Output | Status | id
+function histSheet_() {
+  const ss = SpreadsheetApp.openById(PROPS.getProperty('SHEET_ID'));
+  let sh = ss.getSheetByName('history');
+  if (!sh) { sh = ss.insertSheet('history'); sh.appendRow(['Date', 'Video', 'Inspirations', 'Needs', 'Notes', 'Output', 'Status', 'id']); }
+  return sh;
+}
+function updateHist_(id, status, resultUrl) {
+  const sh = histSheet_(); const rows = sh.getDataRange().getValues();
+  for (let i = 1; i < rows.length; i++) {
+    if (rows[i][7] === id) {
+      if (resultUrl) sh.getRange(i + 1, 6).setValue(resultUrl);
+      if (status)    sh.getRange(i + 1, 7).setValue(status);
+      return;
+    }
+  }
+}
+
 function getQueue_() {
   const rows = sheet_().getDataRange().getValues(); rows.shift();
   return { ok: true, requests: rows.map(r => ({
@@ -147,6 +171,7 @@ function updateRow_(id, status, resultUrl, resultName) {
       if (status)            sh.getRange(i + 1, 9).setValue(status);
       if (resultUrl != null) sh.getRange(i + 1, 10).setValue(resultUrl);
       if (resultName != null) sh.getRange(i + 1, 11).setValue(resultName);
+      updateHist_(id, status, resultUrl);
       return { ok: true };
     }
   }
