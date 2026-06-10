@@ -94,26 +94,38 @@ function filesIn_(folder) {
   return out.sort((a, b) => b.modified.localeCompare(a.modified));
 }
 
-// Inspiration files saved in subfolders (e.g. Assets/Inspiration), up to `depth` levels deep.
-function subInspiration_(folder, depth) {
-  if (depth <= 0) return [];
-  let res = []; const fit = folder.getFolders();
-  while (fit.hasNext()) {
-    const sf = fit.next();
-    filesIn_(sf).forEach(o => { o.lib = sf.getName(); res.push(o); });
-    res = res.concat(subInspiration_(sf, depth - 1));
+function collectInto_(folder, libName, depth, seen, res) {
+  filesIn_(folder).forEach(o => { if (!seen[o.id]) { seen[o.id] = 1; o.lib = libName; res.push(o); } });
+  if (depth <= 0) return;
+  const it = folder.getFolders();
+  while (it.hasNext()) { const sf = it.next(); collectInto_(sf, libName + '/' + sf.getName(), depth - 1, seen, res); }
+}
+
+// Inspiration = files in (1) any subfolder of Submissions, and (2) any folder named
+// *inspiration* / *assets* anywhere under the parent. Found by NAME, so it works wherever
+// you move it. Fully dynamic — no hardcoded inspiration IDs, add files anytime.
+function inspirationFiles_() {
+  const seen = {}, res = [];
+  const sub = DriveApp.getFolderById(PROPS.getProperty('SUBMIT_FOLDER_ID'));
+  const sit = sub.getFolders();
+  while (sit.hasNext()) { const sf = sit.next(); collectInto_(sf, sf.getName(), 1, seen, res); }
+  if (PARENT_FOLDER_ID) {
+    const pit = DriveApp.getFolderById(PARENT_FOLDER_ID).getFolders();
+    while (pit.hasNext()) {
+      const pf = pit.next();
+      if (/inspiration|assets/i.test(pf.getName())) collectInto_(pf, pf.getName(), 2, seen, res);
+    }
   }
-  return res;
+  return res.sort((a, b) => b.modified.localeCompare(a.modified));
 }
 
 function listSubmissions_() {
   const sub = DriveApp.getFolderById(PROPS.getProperty('SUBMIT_FOLDER_ID'));
   const direct = filesIn_(sub);
-  const lib = subInspiration_(sub, 2); // auto-includes Assets/Inspiration & any other subfolder
   return {
     ok: true,
     videos: direct.filter(f => f.isVideo),
-    inspiration: direct.filter(f => !f.isVideo).concat(lib)
+    inspiration: direct.filter(f => !f.isVideo).concat(inspirationFiles_())
   };
 }
 
