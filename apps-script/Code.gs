@@ -122,8 +122,9 @@ function sheet_() { return SpreadsheetApp.openById(PROPS.getProperty('SHEET_ID')
 function getQueue_() {
   const rows = sheet_().getDataRange().getValues(); rows.shift();
   return { ok: true, requests: rows.map(r => ({
-    id: r[0], created: r[1], video_name: r[3], change_type: r[6], notes: r[7],
-    status: r[8], result_url: r[9], result_name: r[10]
+    id: r[0], created: r[1], video_id: r[2], video_name: r[3],
+    inspiration_ids: r[4], inspiration_names: r[5],
+    change_type: r[6], notes: r[7], status: r[8], result_url: r[9], result_name: r[10]
   })).reverse() };
 }
 

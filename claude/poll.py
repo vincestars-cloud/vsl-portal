@@ -2,74 +2,80 @@
 """
 VSL Edit Portal — queue poller for Claude Code (runs on subscription, no API tokens).
 
-Reads the Apps Script queue, surfaces NEW requests, and pulls the chosen video so
-Claude can edit it. Run with no args to list new work; `pull <id>` to fetch a request's
-files; `update <id> <status> [result_url] [result_name]` to mark progress.
+  poll.py                 list NEW requests
+  poll.py process         ingest every NEW request: download video + inspiration, stage a
+                          working dir + BRIEF.md, mark it 'editing'
+  poll.py done <id> <mp4> upload the finished video to Completions + mark the row 'done'
+  poll.py update <id> <status> [url] [name]
 
-Config: set VSL_API to the Apps Script /exec URL (or edit API_DEFAULT below).
-Downloads/uploads use rclone remote `gdrive` (5GB-safe). Falls back to gdown for pulls.
+Drive I/O uses rclone remote `gdrive` (read+write verified). Folders referenced by ID.
 """
 import os, sys, json, subprocess
 
-API = os.environ.get("VSL_API") or "https://script.google.com/macros/s/AKfycbxXa000IF-BPEiF5j9vT1UWd9TNpORow0-XYnlWX2pQXAm7Pf_EEpzZRqDqfkOgXxcw/exec"
-WORKDIR = os.path.expanduser("~/vsl-edit/inbox")
-RCLONE_REMOTE = "gdrive"  # rclone config remote name
+API   = os.environ.get("VSL_API") or "https://script.google.com/macros/s/AKfycbxXa000IF-BPEiF5j9vT1UWd9TNpORow0-XYnlWX2pQXAm7Pf_EEpzZRqDqfkOgXxcw/exec"
+REMOTE = "gdrive:"
+DONE_FOLDER_ID = "1IJ3WphFk2EVVSdS6W1bWxtwZ4WUgRJIT"   # VSL - Completions
+INBOX = os.path.expanduser("~/vsl-edit/inbox")
 
 def _get(action):
     out = subprocess.run(["curl", "-sL", f"{API}?action={action}&t=1"], capture_output=True, text=True, timeout=40).stdout
     return json.loads(out)
 
 def _post(payload):
-    # write happens server-side on the POST; don't follow the 302 (curl mangles POST->GET echo)
     subprocess.run(["curl", "-s", "-X", "POST", "-H", "Content-Type: text/plain",
                     "--data", json.dumps(payload), API], capture_output=True, text=True, timeout=40)
     return {"ok": True}
 
-def list_new():
-    q = _get("queue").get("requests", [])
-    new = [r for r in q if r.get("status") == "new"]
-    if not new:
-        print("No new requests."); return new
-    print(f"{len(new)} NEW request(s):\n")
-    for r in new:
-        print(f"  id:    {r['id']}")
-        print(f"  video: {r.get('video_name','?')}")
-        print(f"  change:{r.get('change_type','?')}")
-        print(f"  notes: {r.get('notes','')}\n")
-    return new
+def queue():        return _get("queue").get("requests", [])
+def new_requests(): return [r for r in queue() if r.get("status") == "new"]
+def update(rid, status, url=None, name=None):
+    return _post({"action": "update", "id": rid, "status": status, "result_url": url, "result_name": name})
 
-def _download(file_id, name, dest):
+def dl(file_id, dest):
     os.makedirs(dest, exist_ok=True)
-    out = os.path.join(dest, name)
-    # try rclone (by id) first, then gdown
-    try:
-        subprocess.run(["rclone", "copyid", f"{RCLONE_REMOTE}:", file_id, dest], check=True)
-        return out
-    except Exception:
-        subprocess.run(["gdown", "--id", file_id, "-O", out], check=True)
-        return out
+    subprocess.run(["rclone", "copyid", REMOTE, file_id, dest], check=True)
 
-def pull(req_id):
-    q = _get("queue").get("requests", [])
-    r = next((x for x in q if x["id"] == req_id), None)
-    if not r:
-        print("id not found"); return
-    # the queue endpoint is trimmed; for ids re-list submissions to map names->ids if needed
-    print(f"Pulling for: {r.get('video_name')} — {r.get('change_type')}")
-    print(f"Notes: {r.get('notes')}")
-    print("NOTE: fetch the video_id from the submissions list / sheet, then:")
-    print(f"  rclone copyid {RCLONE_REMOTE}: <video_id> {WORKDIR}")
-    print(f"  (inspiration files the same way). Then edit in ~/vsl-edit and upload the result:")
-    print(f"  rclone copy <result.mp4> {RCLONE_REMOTE}:VSL-Completions/")
-    print(f"  python3 poll.py update {req_id} done <result_url> <result_name>")
+def ingest(r):
+    d = os.path.join(INBOX, r["id"]); os.makedirs(d, exist_ok=True)
+    if r.get("video_id"):
+        print(f"  ↓ video: {r.get('video_name')}"); dl(r["video_id"], d)
+    insp_ids = [x for x in (r.get("inspiration_ids") or "").split(",") if x]
+    for fid in insp_ids:
+        print(f"  ↓ inspiration: {fid}"); dl(fid, os.path.join(d, "inspiration"))
+    open(os.path.join(d, "BRIEF.md"), "w").write(
+        f"# Edit request {r['id']}\n\n"
+        f"- Video:  {r.get('video_name')}\n- Change: {r.get('change_type')}\n"
+        f"- Notes:  {r.get('notes')}\n- Inspiration: {r.get('inspiration_names') or '(none)'}\n\n"
+        f"Files in: {d}\nWhen finished:  python3 {os.path.abspath(__file__)} done {r['id']} <result.mp4>\n")
+    update(r["id"], "editing")
+    print(f"  ✓ staged -> {d}")
+    return d
 
-def update(req_id, status, result_url=None, result_name=None):
-    print(_post({"action": "update", "id": req_id, "status": status,
-                 "result_url": result_url, "result_name": result_name}))
+def process():
+    n = new_requests()
+    if not n: print("No new requests."); return []
+    print(f"{len(n)} new request(s) — ingesting:\n")
+    dirs = []
+    for r in n:
+        print(f"• {r.get('video_name')} — {r.get('change_type')}")
+        dirs.append(ingest(r)); print()
+    return dirs
+
+def done(rid, path):
+    name = os.path.basename(path)
+    subprocess.run(["rclone", "copy", path, REMOTE, "--drive-root-folder-id", DONE_FOLDER_ID], check=True)
+    link = subprocess.run(["rclone", "link", REMOTE + name, "--drive-root-folder-id", DONE_FOLDER_ID],
+                          capture_output=True, text=True).stdout.strip()
+    update(rid, "done", link, name)
+    print(f"uploaded {name} -> Completions\n{link}")
 
 if __name__ == "__main__":
     a = sys.argv[1:]
-    if not a: list_new()
-    elif a[0] == "pull" and len(a) > 1: pull(a[1])
+    if not a or a[0] == "list":
+        nr = new_requests()
+        print("No new requests." if not nr else
+              "\n".join(f"{r['id']}  {r.get('video_name')}  [{r.get('change_type')}]  {r.get('notes')}" for r in nr))
+    elif a[0] == "process": process()
+    elif a[0] == "done" and len(a) > 2: done(a[1], a[2])
     elif a[0] == "update" and len(a) > 2: update(*a[1:])
     else: print(__doc__)
