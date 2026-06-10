@@ -1,0 +1,197 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8"/>
+<meta name="viewport" content="width=device-width, initial-scale=1"/>
+<title>VSL Edit Requests</title>
+<style>
+  :root{ --ink:#0F172A; --slate:#64748B; --line:#E8EDF3; --green:#10B981; --greenD:#047857; --bg:#F6F8FB; }
+  *{ box-sizing:border-box; }
+  body{ margin:0; font-family:-apple-system,"Helvetica Neue",Arial,sans-serif; color:var(--ink);
+        background:linear-gradient(135deg,#EAFBF3 0%,#F3FAFF 55%,#EEF6FF 100%); min-height:100vh; }
+  .wrap{ max-width:760px; margin:0 auto; padding:38px 20px 80px; }
+  h1{ font-size:30px; font-weight:800; margin:0 0 4px; letter-spacing:-.5px; }
+  .sub{ color:var(--slate); font-weight:600; margin:0 0 26px; font-size:15px; }
+  .card{ background:#fff; border:1px solid var(--line); border-radius:18px; padding:22px 22px 24px;
+         box-shadow:0 18px 50px rgba(15,23,42,.08); margin-bottom:20px; }
+  label{ display:block; font-size:13px; font-weight:800; letter-spacing:.4px; text-transform:uppercase; color:var(--slate); margin:0 0 8px; }
+  select,textarea{ width:100%; font:inherit; color:var(--ink); border:1px solid var(--line); border-radius:12px;
+        padding:13px 14px; background:#fff; outline:none; }
+  select:focus,textarea:focus{ border-color:var(--green); box-shadow:0 0 0 3px rgba(16,185,129,.15); }
+  textarea{ min-height:96px; resize:vertical; }
+  .row{ margin-bottom:18px; }
+  .hint{ font-size:12px; color:var(--slate); font-weight:600; margin-top:6px; }
+  .insp{ display:flex; flex-wrap:wrap; gap:8px; }
+  .chip{ display:inline-flex; align-items:center; gap:7px; border:1px solid var(--line); border-radius:20px;
+         padding:7px 13px; font-size:13px; font-weight:700; cursor:pointer; background:#fff; user-select:none; }
+  .chip input{ accent-color:var(--green); }
+  .chip.on{ border-color:var(--green); background:#F0FDF4; color:var(--greenD); }
+  button{ font:inherit; font-weight:800; border:none; border-radius:12px; padding:14px 22px; cursor:pointer; }
+  .send{ background:linear-gradient(135deg,var(--green),var(--greenD)); color:#fff; width:100%; font-size:16px; }
+  .send:disabled{ opacity:.5; cursor:not-allowed; }
+  .ghost{ background:#fff; border:1px solid var(--line); color:var(--ink); padding:8px 14px; font-size:13px; }
+  .status{ display:flex; align-items:center; gap:8px; font-size:13px; font-weight:700; color:var(--slate); }
+  .dot{ width:8px; height:8px; border-radius:50%; background:var(--green); }
+  .dot.stale{ background:#F59E0B; }
+  .head{ display:flex; align-items:center; justify-content:space-between; margin-bottom:14px; }
+  .head h2{ font-size:18px; font-weight:800; margin:0; }
+  .item{ display:flex; align-items:center; justify-content:space-between; gap:10px; padding:12px 0; border-bottom:1px solid var(--line); }
+  .item:last-child{ border-bottom:none; }
+  .item .nm{ font-weight:700; font-size:15px; }
+  .item .meta{ font-size:12px; color:var(--slate); font-weight:600; }
+  .pill{ font-size:11px; font-weight:800; padding:4px 10px; border-radius:20px; text-transform:uppercase; letter-spacing:.4px; }
+  .pill.new{ background:#EEF2F6; color:var(--slate); }
+  .pill.editing{ background:#FEF3C7; color:#92400E; }
+  .pill.done{ background:#DCFCE7; color:var(--greenD); }
+  a{ color:var(--greenD); font-weight:800; text-decoration:none; }
+  .toast{ position:fixed; left:50%; bottom:26px; transform:translateX(-50%) translateY(120px); transition:.35s;
+          background:var(--ink); color:#fff; padding:13px 20px; border-radius:12px; font-weight:700; font-size:14px; box-shadow:0 18px 40px rgba(0,0,0,.25); }
+  .toast.show{ transform:translateX(-50%) translateY(0); }
+  .empty{ color:var(--slate); font-weight:600; font-size:14px; padding:8px 0; }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <h1>VSL Edit Requests</h1>
+  <p class="sub">Drop raw videos in the Drive folder &mdash; they show up below automatically. Pick one, describe the change, send it to Claude.</p>
+
+  <div class="card">
+    <div class="head">
+      <h2>New request</h2>
+      <div class="status"><span id="dot" class="dot stale"></span><span id="syncLabel">connecting…</span></div>
+    </div>
+
+    <div class="row">
+      <label for="video">Raw video to edit</label>
+      <select id="video"><option value="">Loading from Drive…</option></select>
+      <div class="hint" id="vidHint"></div>
+    </div>
+
+    <div class="row" id="inspRow" style="display:none">
+      <label>Inspiration (optional &mdash; tap any reference files in the folder)</label>
+      <div class="insp" id="insp"></div>
+    </div>
+
+    <div class="row">
+      <label for="change">What change?</label>
+      <select id="change">
+        <option>New section animation</option>
+        <option>Fix lip-sync / corner PiP</option>
+        <option>Re-time a beat to the voiceover</option>
+        <option>Swap / transition a stat</option>
+        <option>Change on-screen text</option>
+        <option>New transition between sections</option>
+        <option>Trim / re-cut timing</option>
+        <option>Color / style tweak</option>
+        <option>Other (describe below)</option>
+      </select>
+    </div>
+
+    <div class="row">
+      <label for="notes">Notes / specifics</label>
+      <textarea id="notes" placeholder="e.g. At ~2:31 swap the 60% stat for a 42hr stat, hold the split-screen. Match the morph style from the speed section."></textarea>
+    </div>
+
+    <button class="send" id="send" disabled>Send to Claude</button>
+  </div>
+
+  <div class="card">
+    <div class="head"><h2>Ready for review</h2><button class="ghost" id="refreshDone">Refresh</button></div>
+    <div id="completions"><div class="empty">Nothing yet.</div></div>
+  </div>
+
+  <div class="card">
+    <div class="head"><h2>Recent requests</h2></div>
+    <div id="queue"><div class="empty">No requests yet.</div></div>
+  </div>
+</div>
+
+<div class="toast" id="toast"></div>
+
+<script>
+  // ===== CONFIG: paste your Apps Script /exec URL here (or it reads ?api= from the URL) =====
+  const API = new URLSearchParams(location.search).get('api') || "PASTE_APPS_SCRIPT_EXEC_URL_HERE";
+  // ========================================================================================
+
+  const $ = id => document.getElementById(id);
+  const fmtSize = b => !b ? "" : b>1e9 ? (b/1e9).toFixed(1)+" GB" : (b/1e6).toFixed(0)+" MB";
+  const ago = iso => { const s=(Date.now()-new Date(iso))/1000; if(s<60)return"just now"; if(s<3600)return Math.floor(s/60)+"m ago"; if(s<86400)return Math.floor(s/3600)+"h ago"; return Math.floor(s/86400)+"d ago"; };
+  let chosenInsp = new Set();
+  let toastT;
+  function toast(m){ const t=$("toast"); t.textContent=m; t.classList.add("show"); clearTimeout(toastT); toastT=setTimeout(()=>t.classList.remove("show"),2600); }
+
+  function setSync(ok, label){ $("dot").className = "dot"+(ok?"":" stale"); $("syncLabel").textContent = label; }
+
+  async function loadSubmissions(){
+    if(API.startsWith("PASTE")){ setSync(false,"set the Apps Script URL"); return; }
+    try{
+      const r = await fetch(API + "?action=list&t=" + Date.now());
+      const d = await r.json();
+      const sel = $("video"); const prev = sel.value;
+      sel.innerHTML = (d.videos&&d.videos.length)
+        ? d.videos.map(v=>`<option value="${v.id}" data-name="${v.name.replace(/"/g,'&quot;')}">${v.name}  ·  ${fmtSize(v.size)}  ·  ${ago(v.modified)}</option>`).join("")
+        : `<option value="">No videos in the folder yet</option>`;
+      if(prev) sel.value = prev;
+      $("vidHint").textContent = d.videos ? `${d.videos.length} video(s) in Drive` : "";
+      // inspiration
+      const insp = d.inspiration||[];
+      $("inspRow").style.display = insp.length ? "block" : "none";
+      $("insp").innerHTML = insp.map(f=>`<label class="chip ${chosenInsp.has(f.id)?'on':''}"><input type="checkbox" value="${f.id}" data-name="${f.name.replace(/"/g,'&quot;')}" ${chosenInsp.has(f.id)?'checked':''}> ${f.name}</label>`).join("");
+      $("insp").querySelectorAll("input").forEach(cb=>cb.onchange=()=>{ cb.checked?chosenInsp.add(cb.value):chosenInsp.delete(cb.value); cb.closest(".chip").classList.toggle("on",cb.checked); });
+      $("send").disabled = !(d.videos&&d.videos.length);
+      setSync(true, "synced " + new Date().toLocaleTimeString([], {hour:'2-digit',minute:'2-digit'}));
+    }catch(err){ setSync(false,"sync failed — retrying"); }
+  }
+
+  async function loadCompletions(){
+    if(API.startsWith("PASTE")) return;
+    try{
+      const d = await (await fetch(API+"?action=completions&t="+Date.now())).json();
+      const el=$("completions");
+      el.innerHTML = (d.files&&d.files.length)
+        ? d.files.map(f=>`<div class="item"><div><div class="nm">${f.name}</div><div class="meta">${fmtSize(f.size)} · ${ago(f.modified)}</div></div><a href="${f.url}" target="_blank">Review &rarr;</a></div>`).join("")
+        : `<div class="empty">Nothing yet.</div>`;
+    }catch(e){}
+  }
+
+  async function loadQueue(){
+    if(API.startsWith("PASTE")) return;
+    try{
+      const d = await (await fetch(API+"?action=queue&t="+Date.now())).json();
+      const el=$("queue");
+      el.innerHTML = (d.requests&&d.requests.length)
+        ? d.requests.slice(0,8).map(q=>`<div class="item"><div><div class="nm">${q.video_name||'(video)'}</div><div class="meta">${q.change_type} · ${ago(q.created)}</div></div><span class="pill ${q.status}">${q.status}</span></div>`).join("")
+        : `<div class="empty">No requests yet.</div>`;
+    }catch(e){}
+  }
+
+  $("send").onclick = async () => {
+    const sel = $("video"); const opt = sel.selectedOptions[0];
+    if(!opt || !opt.value){ toast("Pick a video first"); return; }
+    const inspNames = [...$("insp").querySelectorAll("input:checked")].map(c=>c.dataset.name);
+    const body = {
+      video_id: opt.value, video_name: opt.dataset.name,
+      inspiration_ids: [...chosenInsp], inspiration_names: inspNames,
+      change_type: $("change").value, notes: $("notes").value.trim()
+    };
+    $("send").disabled = true; $("send").textContent = "Sending…";
+    try{
+      // text/plain avoids a CORS preflight to Apps Script
+      const r = await fetch(API, { method:"POST", headers:{"Content-Type":"text/plain;charset=utf-8"}, body:JSON.stringify(body) });
+      const d = await r.json();
+      if(d.ok){ toast("Sent to Claude ✓"); $("notes").value=""; chosenInsp.clear(); loadQueue(); loadSubmissions(); }
+      else toast("Error: "+(d.error||"failed"));
+    }catch(e){ toast("Send failed — check the URL"); }
+    $("send").disabled=false; $("send").textContent="Send to Claude";
+  };
+
+  $("refreshDone").onclick = loadCompletions;
+
+  function tick(){ loadSubmissions(); }
+  loadSubmissions(); loadCompletions(); loadQueue();
+  setInterval(loadSubmissions, 15000);          // poll the Drive folder
+  setInterval(()=>{ loadCompletions(); loadQueue(); }, 30000);
+  window.addEventListener("focus", tick);
+</script>
+</body>
+</html>
