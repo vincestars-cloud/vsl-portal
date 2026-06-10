@@ -48,12 +48,30 @@
           background:var(--ink); color:#fff; padding:13px 20px; border-radius:12px; font-weight:700; font-size:14px; box-shadow:0 18px 40px rgba(0,0,0,.25); }
   .toast.show{ transform:translateX(-50%) translateY(0); }
   .empty{ color:var(--slate); font-weight:600; font-size:14px; padding:8px 0; }
+  /* inspiration combobox */
+  .pills{ display:flex; flex-wrap:wrap; gap:7px; }
+  .pills:not(:empty){ margin-bottom:10px; }
+  .tag{ display:inline-flex; align-items:center; gap:8px; background:#F0FDF4; border:1px solid var(--green); color:var(--greenD);
+        border-radius:18px; padding:6px 9px 6px 13px; font-size:13px; font-weight:700; max-width:100%; }
+  .tag span{ overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+  .tag b{ cursor:pointer; font-weight:800; opacity:.6; font-size:15px; line-height:1; }
+  .tag b:hover{ opacity:1; }
+  .combo{ position:relative; }
+  .drop{ position:absolute; left:0; right:0; top:calc(100% + 6px); background:#fff; border:1px solid var(--line);
+         border-radius:12px; box-shadow:0 18px 44px rgba(15,23,42,.14); max-height:250px; overflow:auto; z-index:30; display:none; }
+  .drop.show{ display:block; }
+  .opt{ padding:10px 14px; font-size:14px; font-weight:600; cursor:pointer; display:flex; gap:8px; align-items:center; }
+  .opt:hover{ background:#F0FDF4; }
+  .opt span.nm{ overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+  .opt .src{ margin-left:auto; flex:none; font-size:11px; color:#94A3B8; font-weight:600; }
+  .ghdr{ padding:9px 14px 4px; font-size:11px; font-weight:800; letter-spacing:.4px; text-transform:uppercase; color:#94A3B8; }
+  .empty2{ padding:12px 14px; color:var(--slate); font-size:13px; font-weight:600; }
 </style>
 </head>
 <body>
 <div class="wrap">
   <h1>VSL Edit Requests</h1>
-  <p class="sub">Drop raw videos in the Drive folder &mdash; they show up below automatically. Pick one, describe the change, send it to Claude.</p>
+  <p class="sub">Drop videos in the Drive folder &mdash; they show up below automatically. Pick one, say what you need (a new build or a specific change), send it to Claude.</p>
 
   <div class="card">
     <div class="head">
@@ -62,19 +80,25 @@
     </div>
 
     <div class="row">
-      <label for="video">Raw video to edit</label>
+      <label for="video">Video</label>
       <select id="video"><option value="">Loading from Drive…</option></select>
       <div class="hint" id="vidHint"></div>
     </div>
 
     <div class="row" id="inspRow" style="display:none">
-      <label>Inspiration (optional &mdash; tap any reference files in the folder)</label>
-      <div class="insp" id="insp"></div>
+      <label>Inspiration (optional)</label>
+      <div id="inspPills" class="pills"></div>
+      <div class="combo">
+        <input id="inspSearch" type="text" placeholder="Search reference files to add…" autocomplete="off"/>
+        <div id="inspDrop" class="drop"></div>
+      </div>
     </div>
 
     <div class="row">
-      <label for="change">What change?</label>
+      <label for="change">What do you need?</label>
       <select id="change">
+        <option>🆕 New build — full edit from scratch</option>
+        <option disabled>──────────</option>
         <option>New section animation</option>
         <option>Fix lip-sync / corner PiP</option>
         <option>Re-time a beat to the voiceover</option>
@@ -122,15 +146,37 @@
 
   function setSync(ok, label){ $("dot").className = "dot"+(ok?"":" stale"); $("syncLabel").textContent = label; }
 
-  // inspiration chips: every other file (videos get a 🎬), multi-select, excludes the chosen target
-  function renderInsp(){
-    const target = $("video").value;
-    const files = (window._allFiles||[]).filter(f=>f.id!==target);
-    $("inspRow").style.display = files.length ? "block" : "none";
-    $("insp").innerHTML = files.map(f=>`<label class="chip ${chosenInsp.has(f.id)?'on':''}"><input type="checkbox" value="${f.id}" data-name="${f.name.replace(/"/g,'&quot;')}" ${chosenInsp.has(f.id)?'checked':''}> ${f.isVideo?'🎬 ':''}${f.name}${f.lib?` <span style="color:#94A3B8;font-weight:600">· ${f.lib}</span>`:''}</label>`).join("");
-    $("insp").querySelectorAll("input").forEach(cb=>cb.onchange=()=>{ cb.checked?chosenInsp.add(cb.value):chosenInsp.delete(cb.value); cb.closest(".chip").classList.toggle("on",cb.checked); });
+  // ---- inspiration combobox: search + selected tags; stays compact at any file count ----
+  function inspFiles(){ const t=$("video").value; return (window._allFiles||[]).filter(f=>f.id!==t); }
+  function renderPills(){
+    const el=$("inspPills");
+    el.innerHTML=[...chosenInsp].map(id=>{ const f=(window._fileById||{})[id]; if(!f) return "";
+      return `<span class="tag">${f.isVideo?'🎬':'📎'} <span>${f.name}</span><b data-id="${id}">×</b></span>`; }).join("");
+    el.querySelectorAll("b").forEach(b=>b.onclick=()=>{ chosenInsp.delete(b.dataset.id); renderPills(); renderDrop($("inspSearch").value); });
   }
-  document.addEventListener("DOMContentLoaded",()=>{ $("video").onchange = ()=>{ chosenInsp.delete($("video").value); renderInsp(); }; });
+  function renderDrop(q){
+    q=(q||"").toLowerCase();
+    const avail=inspFiles().filter(f=>!chosenInsp.has(f.id) && f.name.toLowerCase().includes(q));
+    const vids=avail.filter(f=>f.isVideo), other=avail.filter(f=>!f.isVideo);
+    const opt=f=>`<div class="opt" data-id="${f.id}">${f.isVideo?'🎬':'📎'} <span class="nm">${f.name}</span><span class="src">${f.lib||''}</span></div>`;
+    let html="";
+    if(vids.length)  html+=`<div class="ghdr">Videos</div>`+vids.map(opt).join("");
+    if(other.length) html+=`<div class="ghdr">Images / files</div>`+other.map(opt).join("");
+    if(!avail.length) html=`<div class="empty2">${q?'No matching files':'Nothing to add'}</div>`;
+    const drop=$("inspDrop"); drop.innerHTML=html;
+    drop.querySelectorAll(".opt").forEach(o=>o.onmousedown=e=>{ e.preventDefault(); chosenInsp.add(o.dataset.id);
+      $("inspSearch").value=""; renderPills(); renderDrop(""); $("inspSearch").focus(); });
+  }
+  function refreshInsp(){
+    window._fileById={}; (window._allFiles||[]).forEach(f=>window._fileById[f.id]=f);
+    [...chosenInsp].forEach(id=>{ if(!window._fileById[id]) chosenInsp.delete(id); }); // drop removed files
+    $("inspRow").style.display = (window._allFiles||[]).length ? "block" : "none";
+    renderPills(); if($("inspDrop").classList.contains("show")) renderDrop($("inspSearch").value);
+  }
+  $("video").onchange = ()=>{ chosenInsp.delete($("video").value); renderPills(); renderDrop($("inspSearch").value); };
+  $("inspSearch").addEventListener("focus", ()=>{ renderDrop($("inspSearch").value); $("inspDrop").classList.add("show"); });
+  $("inspSearch").addEventListener("input", ()=>{ renderDrop($("inspSearch").value); $("inspDrop").classList.add("show"); });
+  $("inspSearch").addEventListener("blur",  ()=>{ setTimeout(()=>$("inspDrop").classList.remove("show"),150); });
 
   async function loadSubmissions(){
     if(API.startsWith("PASTE")){ setSync(false,"set the Apps Script URL"); return; }
@@ -145,7 +191,7 @@
       $("vidHint").textContent = d.videos ? `${d.videos.length} video(s) in Drive` : "";
       // inspiration = ANY file (videos or images), minus the chosen target video
       window._allFiles = [...(d.videos||[]), ...(d.inspiration||[])];
-      renderInsp();
+      refreshInsp();
       $("send").disabled = !(d.videos&&d.videos.length);
       setSync(true, "synced " + new Date().toLocaleTimeString([], {hour:'2-digit',minute:'2-digit'}));
     }catch(err){ setSync(false,"sync failed — retrying"); }
@@ -176,7 +222,7 @@
   $("send").onclick = async () => {
     const sel = $("video"); const opt = sel.selectedOptions[0];
     if(!opt || !opt.value){ toast("Pick a video first"); return; }
-    const inspNames = [...$("insp").querySelectorAll("input:checked")].map(c=>c.dataset.name);
+    const inspNames = [...chosenInsp].map(id=>(window._fileById||{})[id]?.name).filter(Boolean);
     const body = {
       video_id: opt.value, video_name: opt.dataset.name,
       inspiration_ids: [...chosenInsp], inspiration_names: inspNames,
