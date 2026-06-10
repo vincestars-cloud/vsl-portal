@@ -15,18 +15,27 @@
 const PROPS = PropertiesService.getScriptProperties();
 const VIDEO_RE = /\.(mp4|mov|m4v|webm|avi|mkv)$/i;
 
+// Create the two subfolders INSIDE this parent folder. Leave '' to use My Drive root.
+const PARENT_FOLDER_ID = '1nGlEFhEXjf_x2-Zu3CogYmO_lu3fWjn0';
+
+function newFolder_(name) {
+  return PARENT_FOLDER_ID
+    ? DriveApp.getFolderById(PARENT_FOLDER_ID).createFolder(name)
+    : DriveApp.createFolder(name);
+}
+
 function setup() {
   let submitId = PROPS.getProperty('SUBMIT_FOLDER_ID');
   let doneId   = PROPS.getProperty('DONE_FOLDER_ID');
   let sheetId  = PROPS.getProperty('SHEET_ID');
 
   if (!submitId) {
-    const f = DriveApp.createFolder('VSL - Submissions (drop raw videos + inspiration here)');
+    const f = newFolder_('VSL - Submissions (drop raw videos + inspiration here)');
     f.setSharing(DriveApp.Access.ANYONE_WITH_LINK, DriveApp.Permission.VIEW); // so Claude can pull by link
     submitId = f.getId(); PROPS.setProperty('SUBMIT_FOLDER_ID', submitId);
   }
   if (!doneId) {
-    const f = DriveApp.createFolder('VSL - Completions (finished edits for review)');
+    const f = newFolder_('VSL - Completions (finished edits for review)');
     f.setSharing(DriveApp.Access.ANYONE_WITH_LINK, DriveApp.Permission.VIEW);
     doneId = f.getId(); PROPS.setProperty('DONE_FOLDER_ID', doneId);
   }
@@ -35,6 +44,7 @@ function setup() {
     const sh = ss.getSheets()[0]; sh.setName('requests');
     sh.appendRow(['id','created','video_id','video_name','inspiration_ids','inspiration_names','change_type','notes','status','result_url','result_name']);
     sheetId = ss.getId(); PROPS.setProperty('SHEET_ID', sheetId);
+    if (PARENT_FOLDER_ID) DriveApp.getFileById(sheetId).moveTo(DriveApp.getFolderById(PARENT_FOLDER_ID));
   }
   const out = {
     submissions_folder: DriveApp.getFolderById(submitId).getUrl(),
