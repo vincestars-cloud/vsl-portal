@@ -122,6 +122,16 @@
 
   function setSync(ok, label){ $("dot").className = "dot"+(ok?"":" stale"); $("syncLabel").textContent = label; }
 
+  // inspiration chips: every other file (videos get a 🎬), multi-select, excludes the chosen target
+  function renderInsp(){
+    const target = $("video").value;
+    const files = (window._allFiles||[]).filter(f=>f.id!==target);
+    $("inspRow").style.display = files.length ? "block" : "none";
+    $("insp").innerHTML = files.map(f=>`<label class="chip ${chosenInsp.has(f.id)?'on':''}"><input type="checkbox" value="${f.id}" data-name="${f.name.replace(/"/g,'&quot;')}" ${chosenInsp.has(f.id)?'checked':''}> ${f.isVideo?'🎬 ':''}${f.name}</label>`).join("");
+    $("insp").querySelectorAll("input").forEach(cb=>cb.onchange=()=>{ cb.checked?chosenInsp.add(cb.value):chosenInsp.delete(cb.value); cb.closest(".chip").classList.toggle("on",cb.checked); });
+  }
+  document.addEventListener("DOMContentLoaded",()=>{ $("video").onchange = ()=>{ chosenInsp.delete($("video").value); renderInsp(); }; });
+
   async function loadSubmissions(){
     if(API.startsWith("PASTE")){ setSync(false,"set the Apps Script URL"); return; }
     try{
@@ -133,11 +143,9 @@
         : `<option value="">No videos in the folder yet</option>`;
       if(prev) sel.value = prev;
       $("vidHint").textContent = d.videos ? `${d.videos.length} video(s) in Drive` : "";
-      // inspiration
-      const insp = d.inspiration||[];
-      $("inspRow").style.display = insp.length ? "block" : "none";
-      $("insp").innerHTML = insp.map(f=>`<label class="chip ${chosenInsp.has(f.id)?'on':''}"><input type="checkbox" value="${f.id}" data-name="${f.name.replace(/"/g,'&quot;')}" ${chosenInsp.has(f.id)?'checked':''}> ${f.name}</label>`).join("");
-      $("insp").querySelectorAll("input").forEach(cb=>cb.onchange=()=>{ cb.checked?chosenInsp.add(cb.value):chosenInsp.delete(cb.value); cb.closest(".chip").classList.toggle("on",cb.checked); });
+      // inspiration = ANY file (videos or images), minus the chosen target video
+      window._allFiles = [...(d.videos||[]), ...(d.inspiration||[])];
+      renderInsp();
       $("send").disabled = !(d.videos&&d.videos.length);
       setSync(true, "synced " + new Date().toLocaleTimeString([], {hour:'2-digit',minute:'2-digit'}));
     }catch(err){ setSync(false,"sync failed — retrying"); }
