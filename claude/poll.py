@@ -9,21 +9,20 @@ files; `update <id> <status> [result_url] [result_name]` to mark progress.
 Config: set VSL_API to the Apps Script /exec URL (or edit API_DEFAULT below).
 Downloads/uploads use rclone remote `gdrive` (5GB-safe). Falls back to gdown for pulls.
 """
-import os, sys, json, subprocess, urllib.request
+import os, sys, json, subprocess
 
 API = os.environ.get("VSL_API") or "https://script.google.com/macros/s/AKfycbxXa000IF-BPEiF5j9vT1UWd9TNpORow0-XYnlWX2pQXAm7Pf_EEpzZRqDqfkOgXxcw/exec"
 WORKDIR = os.path.expanduser("~/vsl-edit/inbox")
 RCLONE_REMOTE = "gdrive"  # rclone config remote name
 
 def _get(action):
-    with urllib.request.urlopen(f"{API}?action={action}&t=1", timeout=30) as r:
-        return json.loads(r.read())
+    out = subprocess.run(["curl", "-sL", f"{API}?action={action}&t=1"], capture_output=True, text=True, timeout=40).stdout
+    return json.loads(out)
 
 def _post(payload):
-    data = json.dumps(payload).encode()
-    req = urllib.request.Request(API, data=data, headers={"Content-Type": "text/plain"})
-    with urllib.request.urlopen(req, timeout=30) as r:
-        return json.loads(r.read())
+    out = subprocess.run(["curl", "-sL", "-X", "POST", "-H", "Content-Type: text/plain",
+                          "--data", json.dumps(payload), API], capture_output=True, text=True, timeout=40).stdout
+    return json.loads(out)
 
 def list_new():
     q = _get("queue").get("requests", [])
