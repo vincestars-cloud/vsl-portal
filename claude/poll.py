@@ -33,7 +33,7 @@ def update(rid, status, url=None, name=None):
 
 def dl(file_id, dest):
     os.makedirs(dest, exist_ok=True)
-    subprocess.run(["rclone", "copyid", REMOTE, file_id, dest], check=True)
+    subprocess.run(["rclone", "backend", "copyid", REMOTE, file_id, dest], check=True)
 
 def ingest(r):
     d = os.path.join(INBOX, r["id"]); os.makedirs(d, exist_ok=True)
