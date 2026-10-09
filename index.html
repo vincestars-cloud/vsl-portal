@@ -78,7 +78,7 @@
   .modebar b{ font-weight:700; }
   .picks{ display:grid; grid-template-columns:repeat(auto-fill,minmax(170px,1fr)); gap:10px; }
   .pick{ text-align:left; display:block; padding:0; min-height:0; border-radius:8px; overflow:hidden; white-space:normal; font-weight:500; position:relative; }
-  .pick .cap{ padding:8px 10px 10px; font-size:13px; line-height:1.35; overflow-wrap:anywhere; }
+  .pick .cap{ display:block; padding:8px 10px 10px; font-size:13px; line-height:1.35; overflow-wrap:anywhere; }
   .pick .cap small{ display:block; color:var(--soft); font-size:12px; margin-top:2px; }
   .pick[aria-pressed=true]{ border-color:var(--act); box-shadow:0 0 0 2px var(--act); }
   .pick .tick{ position:absolute; top:6px; right:6px; width:22px; height:22px; border-radius:50%; background:var(--act); color:#fff; display:none; align-items:center; justify-content:center; }
@@ -120,6 +120,8 @@
   .refnote:first-child{ border-top:none; }
   .refnote .rn{ font-size:13px; font-weight:600; overflow-wrap:anywhere; margin-top:4px; }
   .peek{ margin:10px 0 0; }
+  details.refs > summary{ cursor:pointer; font-size:14px; font-weight:650; color:var(--act); padding:4px 0; }
+  details.refs[open] > summary{ color:var(--ink); margin-bottom:10px; }
   .toast{ position:fixed; left:50%; bottom:24px; transform:translateX(-50%); background:var(--ink); color:#fff; padding:12px 18px; border-radius:8px; font-weight:600; font-size:14px;
           box-shadow:0 10px 30px rgba(0,0,0,.25); display:none; max-width:calc(100vw - 32px); z-index:50; }
   .toast.show{ display:block; }
@@ -150,17 +152,12 @@
   <header class="top">
     <div>
       <h1>Edit requests</h1>
-      <p class="lede">Ask for an edit, watch what comes back, and mark exactly what to change.</p>
+      <p class="lede">Pick a video, say what you need, send.</p>
     </div>
     <div class="sync stale" id="sync"><i></i><span id="syncLabel">Connecting</span></div>
   </header>
 
-  <section style="margin-top:0">
-    <div class="shead"><h2>Your videos</h2><button id="toNew" class="pri"><svg class="ic" viewBox="0 0 24 24"><path d="M12 5v14M5 12h14"/></svg>New edit</button></div>
-    <div class="sheet" id="videos"><div class="empty">Loading.</div></div>
-  </section>
-
-  <section id="composer">
+  <section id="composer" style="margin-top:0">
     <div class="shead"><h2 id="compTitle">New edit</h2></div>
     <div class="sheet comp">
       <div class="modebar" id="modebar" hidden></div>
@@ -195,7 +192,8 @@
         <div style="margin-top:8px"><button class="quiet" id="saveBrief">Save this as a reusable brief</button></div>
       </div>
 
-      <div class="field">
+      <div class="field" id="momentAsk"><button id="addMoment"><svg class="ic" viewBox="0 0 24 24"><path d="M12 5v14M5 12h14"/></svg>Add a note at a specific moment</button></div>
+      <div class="field" id="logField">
         <label class="f" id="logLabel">Changes at specific moments</label>
         <div class="work" id="work">
           <div class="stage" id="stage" hidden></div>
@@ -211,19 +209,24 @@
         </div>
       </div>
 
-      <div class="field">
-        <label class="f" for="refSearch">Reference videos and images</label>
+      <details class="field refs" id="refBox">
+        <summary>Add reference videos or images (optional)</summary>
         <div id="refNotes" class="log" hidden></div>
         <div id="peek" class="peek" hidden></div>
         <input type="text" id="refSearch" placeholder="Search references" autocomplete="off" style="margin:10px 0"/>
         <div class="picks" id="refPicks"></div>
         <div style="margin-top:8px"><button class="quiet" id="refMore" hidden>Show all</button></div>
-      </div>
+      </details>
 
       <div id="sendNote"></div>
       <button class="pri big" id="send" disabled>Send request</button>
     </div>
   </section>
+  <section>
+    <div class="shead"><h2>Your videos</h2></div>
+    <div class="sheet" id="videos"><div class="empty">Loading.</div></div>
+  </section>
+
 </div>
 <input type="file" id="shotFile" accept="image/*" hidden/>
 <input type="file" id="localFile" accept="video/*" hidden/>
@@ -354,7 +357,7 @@
     $("compTitle").textContent = ch ? "Request changes" : "New edit";
     $("fVideo").hidden=ch; $("fChange").hidden=ch;
     $("briefLabel").textContent = ch ? "Anything that applies to the whole video (optional)" : "Overall direction";
-    $("logLabel").textContent = ch ? "What to change" : "Notes on specific moments (optional)";
+    $("logLabel").textContent = ch ? "What to change" : "Notes on specific moments";
     const mb=$("modebar"); mb.hidden=!ch;
     if(ch){ mb.innerHTML=`<span>Changes to <b>${esc(S.target.name)}</b></span><button class="quiet" id="cancelCh">Start a new edit instead</button>`; $("cancelCh").onclick=startNew; }
     renderStage(); checkSend();
@@ -370,7 +373,7 @@
     } else if(st.dataset.id!==f.id || !st.querySelector("iframe")){
       st.innerHTML=`<iframe class="player" src="${preview(f.id)}" allow="autoplay; fullscreen" allowfullscreen title="${esc(f.name)}"></iframe>
         <p class="help">Pause where you want a change and type the time into the row.</p>
-        <div class="bar"><button id="openLocal">Open the file from your computer</button><span class="help" style="margin:0">Then one click grabs the frame and the time.</span></div>`;
+        <div class="bar"><button class="quiet" id="openLocal">Or open the file from your computer to grab frames in one click</button></div>`;
       $("openLocal").onclick=()=>$("localFile").click();
     }
     st.dataset.id=f.id;
@@ -439,10 +442,11 @@
       row.querySelector("[data-shot]").onclick=()=>{ S.pendingShotRow=r.id; $("shotFile").click(); };
       row.querySelector("[data-del]").onclick=()=>{ S.rows=S.rows.filter(x=>x!==r); renderRows(); }; });
     if(focusId){ const t=el.querySelector(`.row[data-id="${focusId}"] textarea`); if(t) t.focus(); }
+    const bare=S.mode==="new" && !S.rows.length; $("logField").hidden=bare; $("momentAsk").hidden=!bare;
     renderStage(); checkSend();
   }
   function normT(v){ v=String(v||"").trim().replace(/^to\s*/i,""); if(/^\d{3,4}$/.test(v)) v=v.slice(0,-2)+":"+v.slice(-2); else if(/^\d{1,2}$/.test(v)) v="0:"+v.padStart(2,"0"); return v; }
-  $("addRow").onclick=()=>{ const r=newRow(); S.rows.push(r); renderRows(r.id); };
+  $("addRow").onclick=$("addMoment").onclick=()=>{ const r=newRow(); S.rows.push(r); renderRows(r.id); };
   function readImage(file,cb){ const fr=new FileReader(); fr.onload=()=>{ const im=new Image(); im.onload=()=>{ const w=Math.min(SHOT_W,im.width), h=Math.round(w*im.height/im.width), c=document.createElement("canvas"); c.width=w; c.height=h;
       c.getContext("2d").drawImage(im,0,0,w,h); cb(c.toDataURL("image/jpeg",.82)); }; im.src=fr.result; }; fr.readAsDataURL(file); }
   function addShot(file,rowId){ readImage(file,data=>{ let r=S.rows.find(x=>x.id===rowId) || S.rows.find(x=>!x.img && !x.text && !x.from); if(!r){ r=newRow(); S.rows.push(r); } r.img=data; renderRows(r.id); }); }
@@ -521,7 +525,6 @@
     else { checkSend(); toast("Sent, but it hasn't shown up in the list yet. Check Your videos before sending again.",7000); }
   };
 
-  $("toNew").onclick=startNew;
   renderMode(); renderRows(); renderBriefs();
   loadList(); loadDone(); loadQueue();
   setInterval(loadList,20000); setInterval(()=>{ loadDone(); loadQueue(); },30000);
