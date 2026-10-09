@@ -67,7 +67,7 @@
   .rv1{ background:var(--r1);} .rv2{ background:var(--r2);} .rv3{ background:var(--r3);} .rv4{ background:var(--r4);} .rv5{ background:var(--r5);} .rv6{ background:var(--r6);}
   .acts{ display:flex; gap:8px; flex-wrap:wrap; justify-content:flex-end; }
   .watch{ grid-column:1 / -1; display:grid; grid-template-columns:minmax(0,1.7fr) minmax(0,1fr); gap:18px; padding:4px 0 6px; }
-  .player{ aspect-ratio:16/9; width:100%; border:0; border-radius:8px; background:#0E1116; display:block; }
+  .player{ aspect-ratio:16/9; width:100%; border:0; border-radius:8px; background:#0E1116; display:flex; align-items:center; justify-content:center; position:relative; overflow:hidden; text-decoration:none; }
   .asked{ font-size:14px; color:var(--soft); white-space:pre-wrap; overflow-wrap:anywhere; max-height:210px; overflow:auto; border:1px solid var(--rule2); border-radius:8px; padding:10px 12px; background:#FAFBFC; }
   details.earlier > summary{ cursor:pointer; padding:14px 16px; font-weight:650; font-size:14px; color:var(--soft); border-top:1px solid var(--rule2); }
   .empty{ padding:22px 16px; color:var(--soft); }
@@ -154,7 +154,10 @@
       <h1>Edit requests</h1>
       <p class="lede">Pick a video, say what you need, send.</p>
     </div>
-    <div class="sync stale" id="sync"><i></i><span id="syncLabel">Connecting</span></div>
+    <div style="display:flex;align-items:center;gap:12px;flex-wrap:wrap">
+      <a class="btn" href="https://drive.google.com/drive/folders/1nGlEFhEXjf_x2-Zu3CogYmO_lu3fWjn0" target="_blank" rel="noopener" style="font-size:13px;padding:7px 12px;min-height:36px"><svg class="ic" viewBox="0 0 24 24"><path d="M22 19a2 2 0 01-2 2H4a2 2 0 01-2-2V5a2 2 0 012-2h5l2 3h9a2 2 0 012 2z"/></svg>Browse Drive folder</a>
+      <div class="sync stale" id="sync"><i></i><span id="syncLabel">Connecting</span></div>
+    </div>
   </header>
 
   <section id="composer" style="margin-top:0">
@@ -326,7 +329,11 @@
         ${g.approved?"":`<button class="ok" data-act="approve" data-key="${esc(g.key)}" data-id="${g.latest.id}">${IC.check}Approve</button>`}</div>` : `<div class="acts"></div>`;
     let watch="";
     if(g.key===S.open && cur){ const r=g.reqOf[cur.name];
-      watch=`<div class="watch"><iframe class="player" src="${preview(cur.id)}" allow="autoplay; fullscreen" allowfullscreen title="${esc(cur.name)}"></iframe>
+      watch=`<div class="watch">
+        <a class="player" href="${esc(cur.url)}" target="_blank" rel="noopener">
+          <img src="${thumb(cur.id,960)}" alt="" style="position:absolute;inset:0;width:100%;height:100%;object-fit:cover;opacity:.55" loading="lazy"/>
+          <span style="position:relative;z-index:1;background:rgba(255,255,255,.93);color:#14171F;border-radius:8px;padding:12px 20px;font-weight:700;font-size:14px;display:inline-flex;align-items:center;gap:7px">${IC.play}Watch in Drive</span>
+        </a>
         <div><h3>${esc(cur.name)}</h3>${r&&r.notes?`<div class="asked">${esc(r.notes)}</div>`:`<p class="help" style="margin:0">No notes were saved with this version.</p>`}
         <p style="margin:12px 0 0"><a class="btn" href="${esc(cur.url)}" target="_blank" rel="noopener">Open in Drive</a></p></div></div>`; }
     return `<div class="vid"><span class="th">${tid?`<img src="${thumb(tid,320)}" alt="" loading="lazy" onerror="this.remove()"/>`:""}</span>
@@ -369,9 +376,12 @@
       st.innerHTML=`<video id="lv" src="${S.localUrl}" controls playsinline></video>
         <div class="bar"><button class="pri" id="grab">${IC.pen}Add a change at this moment</button><button class="quiet" id="unlocal">Close file</button></div>`;
       $("grab").onclick=grab; $("unlocal").onclick=()=>{ clearLocal(); renderStage(); };
-    } else if(st.dataset.id!==f.id || !st.querySelector("iframe")){
-      st.innerHTML=`<iframe class="player" src="${preview(f.id)}" allow="autoplay; fullscreen" allowfullscreen title="${esc(f.name)}"></iframe>
-        <p class="help">Pause where you want a change and type the time into the row.</p>
+    } else if(st.dataset.id!==f.id || !st.querySelector(".player")){
+      st.innerHTML=`<a class="player" href="${esc(f.url)}" target="_blank" rel="noopener" style="max-height:62vh">
+          <img src="${thumb(f.id,960)}" alt="" style="position:absolute;inset:0;width:100%;height:100%;object-fit:cover;opacity:.55" loading="lazy"/>
+          <span style="position:relative;z-index:1;background:rgba(255,255,255,.93);color:#14171F;border-radius:8px;padding:12px 20px;font-weight:700;font-size:14px;display:inline-flex;align-items:center;gap:7px">${IC.play}Open in Drive</span>
+        </a>
+        <p class="help">Open in Drive, pause where you want a change, and type the time into the row.</p>
         <div class="bar"><button class="quiet" id="openLocal">Or open the file from your computer to grab frames in one click</button></div>`;
       $("openLocal").onclick=()=>$("localFile").click();
     }
@@ -393,8 +403,9 @@
     const el=$("vidPicks");
     if(!S.videos.length){ el.innerHTML=""; $("vidHelp").textContent="No videos in the Drive folder yet. Drop one in and it shows up here."; return; }
     if(S.video && !S.videos.some(v=>v.id===S.video)) S.video=null;
-    $("vidHelp").textContent="Videos you drop in the Drive folder show up here.";
-    el.innerHTML=S.videos.map(v=>`<button class="pick" data-id="${v.id}" aria-pressed="${v.id===S.video}"><span class="th" style="border-radius:0"><img src="${thumb(v.id,360)}" alt="" loading="lazy" onerror="this.remove()"/></span>
+    const shown10 = S.videos.slice(0, 10);
+    $("vidHelp").textContent = S.videos.length > 10 ? `Showing the 10 most recent videos (${S.videos.length} total in Drive).` : "Videos you drop in the Drive folder show up here.";
+    el.innerHTML=shown10.map(v=>`<button class="pick" data-id="${v.id}" aria-pressed="${v.id===S.video}"><span class="th" style="border-radius:0"><img src="${thumb(v.id,360)}" alt="" loading="lazy" onerror="this.remove()"/></span>
       <span class="tick">${IC.check}</span><span class="cap">${esc(noExt(v.name))}<small>added ${ago(v.modified)}</small></span></button>`).join("");
     el.querySelectorAll(".pick").forEach(b=>b.onclick=()=>{ S.video = S.video===b.dataset.id ? null : b.dataset.id; S.dupOk=false; S.refs.delete(S.video); clearLocal(); renderVidPicks(); renderRefs(); renderDup(); renderStage(); checkSend(); });
   }
@@ -468,7 +479,12 @@
     renderRefNotes();
   }
   function renderPeek(){ const el=$("peek"), f=S.peek && S.byId[S.peek]; el.hidden=!f; if(!f){ el.innerHTML=""; return; }
-    el.innerHTML = (f.isVideo ? `<iframe class="player" style="max-width:640px" src="${preview(f.id)}" allow="autoplay; fullscreen" allowfullscreen title="${esc(f.name)}"></iframe>` : `<img src="${thumb(f.id,1200)}" alt="${esc(f.name)}" style="max-width:100%;max-height:60vh;border-radius:8px;display:block"/>`)
+    el.innerHTML = (f.isVideo ?
+      `<a class="player" href="${esc(f.url)}" target="_blank" rel="noopener" style="max-width:640px">
+        <img src="${thumb(f.id,960)}" alt="" style="position:absolute;inset:0;width:100%;height:100%;object-fit:cover;opacity:.55" loading="lazy"/>
+        <span style="position:relative;z-index:1;background:rgba(255,255,255,.93);color:#14171F;border-radius:8px;padding:12px 20px;font-weight:700;font-size:14px;display:inline-flex;align-items:center;gap:7px">${IC.play}Watch in Drive</span>
+      </a>`
+      : `<img src="${thumb(f.id,1200)}" alt="${esc(f.name)}" style="max-width:100%;max-height:60vh;border-radius:8px;display:block"/>`)
       + `<div style="display:flex;gap:8px;margin-top:8px;flex-wrap:wrap"><button id="peekUse" class="pri">${S.refs.has(f.id)?"Added as a reference":"Use as a reference"}</button><button id="peekClose">Close preview</button></div>`;
     $("peekUse").disabled=S.refs.has(f.id); $("peekUse").onclick=()=>{ S.refs.set(f.id,{at:"",text:""}); renderRefs(); renderPeek(); }; $("peekClose").onclick=()=>{ S.peek=null; renderPeek(); };
     el.scrollIntoView({block:"nearest"}); }
