@@ -59,6 +59,7 @@ function setup() {
 
 // ===== 24/7 email notifier — runs on Google's servers, works even if your Mac sleeps =====
 const NOTIFY_EMAIL = 'starsvince@gmail.com';   // <- change to your preferred address
+const NOTIFY_CC    = 'martin@narrowgatefirm.com';   // requester gets the same confirmation
 
 // Run ONCE (like setup) to install the every-5-min checker. Authorize email when prompted.
 function installNotifier() {
@@ -83,7 +84,8 @@ function checkAndNotify() {
       '\nNeeds: '      + (r[6] || '') +
       '\nInspiration: '+ (r[5] || '(none)') +
       '\nNotes: '      + (r[7] || '') +
-      '\n\nPortal: https://vincestars-cloud.github.io/vsl-portal/');
+      '\n\nPortal: https://vincestars-cloud.github.io/vsl-portal/',
+      { cc: NOTIFY_CC });
     notified.push(r[0]);
   });
   PROPS.setProperty('NOTIFIED', JSON.stringify(notified.slice(-300)));
@@ -102,6 +104,13 @@ function doPost(e) {
     if (b.action === 'update') return json_(updateRow_(b.id, b.status, b.result_url, b.result_name));
     const sh = sheet_();
     const id = Utilities.getUuid();
+    // Screenshots marked up in the portal: saved to Drive and attached to the request like any reference file.
+    b.inspiration_ids = b.inspiration_ids || []; b.inspiration_names = b.inspiration_names || [];
+    (b.shots || []).slice(0, 30).forEach(function (s) {
+      const name = id.slice(0, 8) + '_' + String(s.name || 'change.jpg').replace(/[^\w.\-]/g, '');
+      const f = shotsFolder_().createFile(Utilities.newBlob(Utilities.base64Decode(s.data), 'image/jpeg', name));
+      b.inspiration_ids.push(f.getId()); b.inspiration_names.push(name);
+    });
     sh.appendRow([
       id, new Date().toISOString(),
       b.video_id || '', b.video_name || '',
@@ -116,6 +125,17 @@ function doPost(e) {
     ]);
     return json_({ ok: true, id: id });
   } catch (err) { return json_({ ok: false, error: String(err) }); }
+}
+
+// Folder for portal screenshots. Lives beside (not inside) Submissions so it never shows up in the reference list.
+function shotsFolder_() {
+  let id = PROPS.getProperty('SHOTS_FOLDER_ID');
+  if (!id) {
+    const f = newFolder_('VSL - Edit note screenshots');
+    f.setSharing(DriveApp.Access.ANYONE_WITH_LINK, DriveApp.Permission.VIEW);
+    id = f.getId(); PROPS.setProperty('SHOTS_FOLDER_ID', id);
+  }
+  return DriveApp.getFolderById(id);
 }
 
 function fileObj_(f) {
@@ -162,6 +182,7 @@ function listSubmissions_() {
   const direct = filesIn_(sub);
   return {
     ok: true,
+    caps: { upload: true },   // tells the portal this backend can save screenshots
     videos: direct.filter(f => f.isVideo),
     inspiration: direct.filter(f => !f.isVideo).concat(inspirationFiles_())
   };
