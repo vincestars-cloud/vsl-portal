@@ -555,10 +555,17 @@
     let found=false;
     for(const wait of [1500,3000,5000]){ await new Promise(r=>setTimeout(r,wait)); await loadQueue();
       if(S.queue.some(q=>q.video_id===body.video_id && String(q.notes).indexOf(body.notes)===0 && Date.now()-new Date(q.created)<300000)){ found=true; break; } }
-    btn.textContent="Send request";
-    if(found){ toast("Request received. You'll get an email when the edit is ready.",5000); $("brief").value=""; S.rows=[]; S.refs.clear(); S.dupOk=false; S.video=null; S.mode="new"; S.target=null; clearLocal();
-      renderMode(); renderRows(); renderVidPicks(); renderRefs(); window.scrollTo({top:0}); }
-    else { checkSend(); toast("Sent, but it hasn't shown up in the list yet. Check Your videos before sending again.",7000); }
+    if(found){
+      btn.textContent="✓ Sent"; btn.style.background="#0B6B3A"; btn.style.borderColor="#0B6B3A";
+      setTimeout(()=>{ btn.textContent="Send request"; btn.style.background=""; btn.style.borderColor=""; checkSend(); }, 2200);
+      toast("Request queued — you'll see it below and get an email shortly.",5000);
+      $("brief").value=""; S.rows=[]; S.refs.clear(); S.dupOk=false; S.video=null; S.mode="new"; S.target=null; clearLocal();
+      renderMode(); renderRows(); renderVidPicks(); renderRefs();
+      setTimeout(()=>$("videos").scrollIntoView({behavior:"smooth",block:"start"}), 120);
+    } else {
+      btn.textContent="Send request"; checkSend();
+      toast("Sent, but it hasn't shown up in the list yet. Check Your videos before sending again.",7000);
+    }
   };
 
   renderMode(); renderRows(); renderBriefs();

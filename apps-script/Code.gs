@@ -84,7 +84,7 @@ function checkAndNotify() {
       '\nNeeds: '      + (r[6] || '') +
       '\nInspiration: '+ (r[5] || '(none)') +
       '\nNotes: '      + (r[7] || '') +
-      '\n\nPortal: https://vincestars-cloud.github.io/vsl-portal/',
+      '\n\nPortal: https://edits.vincestars.com',
       { cc: NOTIFY_CC });
     notified.push(r[0]);
   });
@@ -146,6 +146,23 @@ function doPost(e) {
       b.video_name || '', (b.inspiration_names || []).join(', '),
       b.change_type || '', b.notes || '', '', 'new', id
     ]);
+    // Immediate notification — fires as soon as the request is saved.
+    // Also marks the id in NOTIFIED so checkAndNotify() won't send a duplicate.
+    try {
+      const cleanNotes = (b.notes || '').replace(/\n*Sent from the portal by \S+ \[[0-9a-f]+\]\s*$/, '').slice(0, 500);
+      MailApp.sendEmail(
+        NOTIFY_EMAIL,
+        'New VSL edit request: ' + (b.video_name || 'video'),
+        'Video: '    + (b.video_name   || '(unknown)') +
+        '\nNeeds: '  + (b.change_type  || '') +
+        '\nNotes: '  + (cleanNotes     || '(none)') +
+        '\n\nPortal: https://edits.vincestars.com',
+        { cc: NOTIFY_CC }
+      );
+      const notified = JSON.parse(PROPS.getProperty('NOTIFIED') || '[]');
+      notified.push(id);
+      PROPS.setProperty('NOTIFIED', JSON.stringify(notified.slice(-300)));
+    } catch (mailErr) { /* non-fatal — request is saved even if mail fails */ }
     return json_({ ok: true, id: id });
   } catch (err) { return json_({ ok: false, error: String(err) }); }
 }
