@@ -4,5 +4,6 @@
   "compatibility_date": "2026-10-01",
   "workers_dev": true,
   "routes": [{ "pattern": "edits.vincestars.com", "custom_domain": true }],
+  "vars": { "ALLOWED": "[\"starsvince@gmail.com\",\"martin@narrowgatefirm.com\"]" },
   "assets": { "directory": "../site", "binding": "ASSETS", "run_worker_first": true }
 }

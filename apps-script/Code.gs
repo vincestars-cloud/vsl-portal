@@ -98,9 +98,32 @@ function doGet(e) {
   return json_(listSubmissions_()); // submissions (default)
 }
 
+// ===== Passwordless login: email a one-time sign-in link on behalf of the Cloudflare Worker. =====
+// Only ever emails the two owners, and only a real /auth link on the portal domain, so even a
+// direct POST to this public endpoint can't be used to send a phishing link to anyone else.
+const LOGIN_ALLOWED = ['starsvince@gmail.com', 'martin@narrowgatefirm.com'];
+const LOGIN_LINK_RE = /^https:\/\/edits\.vincestars\.com\/auth\?t=[^\s"'<>]+$/;
+
+function sendMagicLink_(b) {
+  const email = String(b.email || '').trim().toLowerCase();
+  const link  = String(b.link || '');
+  if (LOGIN_ALLOWED.indexOf(email) === -1) return json_({ ok: true });            // silent: no account enumeration
+  if (!LOGIN_LINK_RE.test(link))           return json_({ ok: false, error: 'bad link' });
+  MailApp.sendEmail(email, 'Your sign-in link — Edit requests',
+    'Click to sign in (the link expires in 15 minutes):\n\n' + link +
+    '\n\nIf you did not request this, you can ignore this email.',
+    { name: 'Edit Requests', htmlBody:
+      '<p style="font:15px/1.5 -apple-system,Arial,sans-serif">Click to sign in (the link expires in 15 minutes):</p>' +
+      '<p><a href="' + link + '" style="display:inline-block;background:#1F4FD8;color:#fff;padding:12px 22px;border-radius:8px;text-decoration:none;font:600 15px -apple-system,Arial,sans-serif">Sign in</a></p>' +
+      '<p style="color:#5B6472;font:13px/1.5 -apple-system,Arial,sans-serif">Or paste this link into your browser:<br>' + link + '</p>' +
+      '<p style="color:#99a;font:12px -apple-system,Arial,sans-serif">If you did not request this, you can ignore this email.</p>' });
+  return json_({ ok: true });
+}
+
 function doPost(e) {
   try {
     const b = JSON.parse(e.postData.contents);
+    if (b.action === 'magiclink') return sendMagicLink_(b);
     if (b.action === 'update') return json_(updateRow_(b.id, b.status, b.result_url, b.result_name));
     const sh = sheet_();
     const id = Utilities.getUuid();
