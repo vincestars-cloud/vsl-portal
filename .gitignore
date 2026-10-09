@@ -2,3 +2,5 @@ node_modules/
 .DS_Store
 __pycache__/
 dbg*.html
+.portal_secrets.json
+.wrangler/

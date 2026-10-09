@@ -1,0 +1,533 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8"/>
+<meta name="viewport" content="width=device-width, initial-scale=1"/>
+<title>Edit requests</title>
+<style>
+  :root{
+    --paper:#F4F5F7; --sheet:#FFFFFF; --ink:#14171F; --soft:#4F5866; --rule:#D8DDE5; --rule2:#EBEEF2;
+    --act:#1F4FD8; --actD:#173DAB; --actT:#EEF3FE;
+    --ok:#0B6B3A; --okT:#E3F4EA; --warn:#8A5300; --warnT:#FFF3D6; --bad:#A3231B; --badT:#FDE9E7;
+    --r1:#FFFFFF; --r2:#D6E6FB; --r3:#FBD9E3; --r4:#FBF0B8; --r5:#D3EFD9; --r6:#F6DDA6;
+  }
+  *{ box-sizing:border-box; }
+  html{ -webkit-text-size-adjust:100%; }
+  body{ margin:0; background:var(--paper); color:var(--ink);
+        font:16px/1.5 -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,"Helvetica Neue",Arial,sans-serif; }
+  .wrap{ max-width:1080px; margin:0 auto; padding:28px 20px 96px; }
+  header.top{ display:flex; align-items:flex-end; justify-content:space-between; gap:16px; flex-wrap:wrap; margin-bottom:22px; }
+  h1{ font-size:28px; line-height:1.15; font-weight:750; letter-spacing:-.02em; margin:0; }
+  .lede{ color:var(--soft); margin:6px 0 0; max-width:62ch; font-size:15px; }
+  .sync{ display:flex; align-items:center; gap:8px; font-size:13px; color:var(--soft); }
+  .sync i{ width:8px; height:8px; border-radius:50%; background:var(--ok); }
+  .sync.stale i{ background:#C98A00; }
+  h2{ font-size:19px; line-height:1.25; font-weight:700; letter-spacing:-.01em; margin:0; }
+  h3{ font-size:15px; font-weight:700; margin:0 0 8px; }
+  .sheet{ background:var(--sheet); border:1px solid var(--rule); border-radius:10px; box-shadow:0 1px 2px rgba(20,23,31,.05), 0 8px 24px -12px rgba(20,23,31,.12); }
+  section{ margin-top:36px; }
+  .shead{ display:flex; align-items:center; justify-content:space-between; gap:12px; margin-bottom:12px; }
+
+  button, .btn{ font:inherit; font-weight:650; font-size:14px; border-radius:8px; border:1px solid var(--rule); background:#fff; color:var(--ink);
+          padding:9px 14px; min-height:40px; cursor:pointer; display:inline-flex; align-items:center; gap:7px; text-decoration:none; white-space:nowrap; }
+  button:hover, .btn:hover{ border-color:#AEB6C2; }
+  button:focus-visible, .btn:focus-visible, input:focus-visible, textarea:focus-visible, select:focus-visible, summary:focus-visible, .pick:focus-visible{ outline:3px solid rgba(31,79,216,.35); outline-offset:2px; }
+  button.pri{ background:var(--act); border-color:var(--act); color:#fff; }
+  button.pri:hover{ background:var(--actD); border-color:var(--actD); }
+  button.ok{ background:var(--ok); border-color:var(--ok); color:#fff; }
+  button.quiet{ border-color:transparent; background:transparent; color:var(--act); padding:6px 8px; min-height:32px; }
+  button.quiet:hover{ background:var(--actT); }
+  button:disabled{ opacity:.5; cursor:not-allowed; }
+  button.big{ width:100%; justify-content:center; font-size:16px; min-height:50px; }
+  svg.ic{ width:16px; height:16px; flex:none; fill:none; stroke:currentColor; stroke-width:2; stroke-linecap:round; stroke-linejoin:round; }
+
+  input[type=text], textarea, select{ font:inherit; color:var(--ink); width:100%; border:1px solid var(--rule); border-radius:8px; padding:10px 12px; background:#fff; }
+  textarea{ resize:vertical; min-height:72px; }
+  ::placeholder{ color:#6B7482; }
+  label.f{ display:block; font-size:14px; font-weight:650; margin:0 0 6px; }
+  .help{ font-size:13px; color:var(--soft); margin:6px 0 0; }
+  .field{ margin-bottom:22px; }
+
+  /* ---- videos ---- */
+  .vid{ display:grid; grid-template-columns:132px 1fr auto; gap:16px; align-items:center; padding:14px 16px; border-top:1px solid var(--rule2); }
+  .vid:first-child{ border-top:none; }
+  .th{ aspect-ratio:16/9; width:100%; border-radius:6px; background:#E3E7ED center/cover no-repeat; overflow:hidden; display:block; position:relative; }
+  .th img{ width:100%; height:100%; object-fit:cover; display:block; }
+  .vid > div{ min-width:0; }
+  .vid .nm{ font-weight:650; font-size:16px; line-height:1.3; overflow-wrap:anywhere; }
+  .vid .st{ font-size:14px; color:var(--soft); margin-top:3px; display:flex; flex-wrap:wrap; gap:6px 10px; align-items:center; }
+  .mark{ display:inline-flex; align-items:center; gap:6px; font-weight:650; font-size:13px; padding:2px 9px; border-radius:99px; }
+  .mark.edit{ background:var(--warnT); color:var(--warn); }
+  .mark.ready{ background:var(--actT); color:var(--actD); }
+  .mark.appr{ background:var(--okT); color:var(--ok); }
+  .mark.fail{ background:var(--badT); color:var(--bad); }
+  .vers{ display:flex; gap:6px; flex-wrap:wrap; margin-top:8px; }
+  .ver{ font-size:12px; font-weight:700; padding:3px 9px; border-radius:5px; border:1px solid rgba(20,23,31,.18); color:var(--ink); min-height:0; font-variant-numeric:tabular-nums; }
+  .ver[aria-pressed=true]{ outline:2px solid var(--ink); outline-offset:1px; }
+  .rv1{ background:var(--r1);} .rv2{ background:var(--r2);} .rv3{ background:var(--r3);} .rv4{ background:var(--r4);} .rv5{ background:var(--r5);} .rv6{ background:var(--r6);}
+  .acts{ display:flex; gap:8px; flex-wrap:wrap; justify-content:flex-end; }
+  .watch{ grid-column:1 / -1; display:grid; grid-template-columns:minmax(0,1.7fr) minmax(0,1fr); gap:18px; padding:4px 0 6px; }
+  .player{ aspect-ratio:16/9; width:100%; border:0; border-radius:8px; background:#0E1116; display:block; }
+  .asked{ font-size:14px; color:var(--soft); white-space:pre-wrap; overflow-wrap:anywhere; max-height:210px; overflow:auto; border:1px solid var(--rule2); border-radius:8px; padding:10px 12px; background:#FAFBFC; }
+  details.earlier > summary{ cursor:pointer; padding:14px 16px; font-weight:650; font-size:14px; color:var(--soft); border-top:1px solid var(--rule2); }
+  .empty{ padding:22px 16px; color:var(--soft); }
+
+  /* ---- composer ---- */
+  .comp{ padding:22px; }
+  .modebar{ display:flex; align-items:center; justify-content:space-between; gap:12px; flex-wrap:wrap; padding:12px 14px; border-radius:8px; background:var(--actT); margin-bottom:22px; font-size:14px; }
+  .modebar b{ font-weight:700; }
+  .picks{ display:grid; grid-template-columns:repeat(auto-fill,minmax(170px,1fr)); gap:10px; }
+  .pick{ text-align:left; display:block; padding:0; min-height:0; border-radius:8px; overflow:hidden; white-space:normal; font-weight:500; position:relative; }
+  .pick .cap{ display:block; padding:8px 10px 10px; font-size:13px; line-height:1.35; overflow-wrap:anywhere; }
+  .pick .cap small{ display:block; color:var(--soft); font-size:12px; margin-top:2px; }
+  .pick[aria-pressed=true]{ border-color:var(--act); box-shadow:0 0 0 2px var(--act); }
+  .pick .tick{ position:absolute; top:6px; right:6px; width:22px; height:22px; border-radius:50%; background:var(--act); color:#fff; display:none; align-items:center; justify-content:center; }
+  .pick[aria-pressed=true] .tick{ display:flex; }
+  .pick .play{ position:absolute; left:6px; top:6px; background:rgba(14,17,22,.78); color:#fff; border-radius:5px; padding:3px 7px; font-size:12px; font-weight:650; display:inline-flex; gap:5px; align-items:center; cursor:pointer; }
+  .note{ border-radius:8px; padding:10px 12px; font-size:14px; margin-top:10px; }
+  .note.warn{ background:var(--warnT); color:#5E3900; }
+  .note.bad{ background:var(--badT); color:#7A1A14; }
+  .note label{ display:flex; gap:8px; align-items:center; margin-top:6px; font-weight:650; }
+
+  .briefs{ display:flex; gap:6px; flex-wrap:wrap; margin-bottom:8px; }
+  .chip{ font-size:13px; font-weight:600; padding:5px 10px; min-height:32px; border-radius:99px; max-width:260px; }
+  .chip span{ overflow:hidden; text-overflow:ellipsis; }
+  .chip .x{ color:var(--soft); margin-left:2px; padding:0 2px; }
+
+  /* the change list */
+  .work{ display:grid; grid-template-columns:1fr; gap:18px; }
+  .work.two{ grid-template-columns:minmax(0,1fr) minmax(0,1.15fr); align-items:start; }
+  .stage{ position:sticky; top:14px; }
+  .stage .bar{ display:flex; gap:8px; flex-wrap:wrap; align-items:center; margin-top:10px; }
+  .stage video{ width:100%; border-radius:8px; background:#0E1116; display:block; max-height:62vh; }
+  .log{ border:1px solid var(--rule); border-radius:8px; overflow:hidden; }
+  .row{ display:grid; grid-template-columns:28px minmax(0,1fr) 132px 34px; gap:10px 12px; padding:12px; border-top:1px solid var(--rule2); align-items:start; }
+  .row:first-child{ border-top:none; }
+  .row .n{ font-weight:700; font-variant-numeric:tabular-nums; padding-top:9px; color:var(--soft); }
+  .row .t{ display:grid; grid-template-columns:1fr 1fr; gap:8px; align-self:center; }
+  .row .t input{ font-variant-numeric:tabular-nums; padding:8px 10px; }
+  .row .c{ grid-column:2 / 4; }
+  .row .del{ grid-column:4; grid-row:1; }
+  .shot{ aspect-ratio:16/9; width:100%; border:1px dashed #AEB6C2; border-radius:6px; background:#FAFBFC; color:var(--soft); font-size:12px; font-weight:600;
+         padding:4px; min-height:0; justify-content:center; text-align:center; white-space:normal; line-height:1.25; overflow:hidden; }
+  .shot.has{ border-style:solid; padding:0; }
+  .shot img{ width:100%; height:100%; object-fit:cover; display:block; }
+  .row textarea{ min-height:74px; }
+  .row .del{ padding:6px; min-height:34px; border-color:transparent; color:var(--soft); justify-content:center; }
+  .row .del:hover{ background:var(--badT); color:var(--bad); }
+  .logfoot{ display:flex; gap:10px; flex-wrap:wrap; align-items:center; padding:12px; border-top:1px solid var(--rule2); background:#FAFBFC; font-size:13px; color:var(--soft); }
+  .refnote{ display:grid; grid-template-columns:132px 96px 1fr 34px; gap:12px; align-items:start; padding:12px; border-top:1px solid var(--rule2); }
+  .refnote:first-child{ border-top:none; }
+  .refnote .rn{ font-size:13px; font-weight:600; overflow-wrap:anywhere; margin-top:4px; }
+  .peek{ margin:10px 0 0; }
+  details.refs > summary{ cursor:pointer; font-size:14px; font-weight:650; color:var(--act); padding:4px 0; }
+  details.refs[open] > summary{ color:var(--ink); margin-bottom:10px; }
+  .toast{ position:fixed; left:50%; bottom:24px; transform:translateX(-50%); background:var(--ink); color:#fff; padding:12px 18px; border-radius:8px; font-weight:600; font-size:14px;
+          box-shadow:0 10px 30px rgba(0,0,0,.25); display:none; max-width:calc(100vw - 32px); z-index:50; }
+  .toast.show{ display:block; }
+  [hidden]{ display:none !important; }
+
+  @media (max-width:860px){
+    .vid{ grid-template-columns:104px 1fr; }
+    .acts{ grid-column:1 / -1; justify-content:flex-start; }
+    .watch{ grid-template-columns:1fr; }
+    .work.two{ grid-template-columns:1fr; }
+    .stage{ position:static; }
+  }
+  @media (max-width:620px){
+    .wrap{ padding:20px 14px 90px; }
+    .comp{ padding:16px; }
+    .row{ grid-template-columns:24px minmax(0,1fr) 34px; }
+    .row .s{ grid-column:2; max-width:200px; }
+    .row .c{ grid-column:2 / 3; }
+    .row .del{ grid-column:3; }
+    .refnote{ grid-template-columns:96px 1fr 34px; }
+    .refnote .c{ grid-column:1 / -1; }
+    button, .btn{ min-height:44px; }
+  }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header class="top">
+    <div>
+      <h1>Edit requests</h1>
+      <p class="lede">Pick a video, say what you need, send.</p>
+    </div>
+    <div class="sync stale" id="sync"><i></i><span id="syncLabel">Connecting</span></div>
+  </header>
+
+  <section id="composer" style="margin-top:0">
+    <div class="shead"><h2 id="compTitle">New edit</h2></div>
+    <div class="sheet comp">
+      <div class="modebar" id="modebar" hidden></div>
+
+      <div class="field" id="fVideo">
+        <label class="f">Video</label>
+        <div class="picks" id="vidPicks"></div>
+        <p class="help" id="vidHelp">Videos you drop in the Drive folder show up here.</p>
+        <div id="dupWarn"></div>
+      </div>
+
+      <div class="field" id="fChange">
+        <label class="f" for="change">What do you need?</label>
+        <select id="change">
+          <option>New build: full edit from scratch</option>
+          <option>New section animation</option>
+          <option>Fix lip-sync / corner PiP</option>
+          <option>Re-time a beat to the voiceover</option>
+          <option>Swap / transition a stat</option>
+          <option>Change on-screen text</option>
+          <option>New transition between sections</option>
+          <option>Trim / re-cut timing</option>
+          <option>Color / style tweak</option>
+          <option>Other (describe below)</option>
+        </select>
+      </div>
+
+      <div class="field">
+        <label class="f" for="brief" id="briefLabel">Overall direction</label>
+        <div class="briefs" id="briefs"></div>
+        <textarea id="brief" rows="4" placeholder="Style, tone, anything that applies to the whole video."></textarea>
+        <div style="margin-top:8px"><button class="quiet" id="saveBrief">Save this as a reusable brief</button></div>
+      </div>
+
+      <div class="field" id="momentAsk"><button id="addMoment"><svg class="ic" viewBox="0 0 24 24"><path d="M12 5v14M5 12h14"/></svg>Add a note at a specific moment</button></div>
+      <div class="field" id="logField">
+        <label class="f" id="logLabel">Changes at specific moments</label>
+        <div class="work" id="work">
+          <div class="stage" id="stage" hidden></div>
+          <div>
+            <div class="log">
+              <div id="rows"></div>
+              <div class="logfoot">
+                <button id="addRow"><svg class="ic" viewBox="0 0 24 24"><path d="M12 5v14M5 12h14"/></svg>Add a change</button>
+                <span id="logHint">Paste a screenshot anywhere on this page to add it as a change.</span>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <details class="field refs" id="refBox">
+        <summary>Add reference videos or images (optional)</summary>
+        <div id="refNotes" class="log" hidden></div>
+        <div id="peek" class="peek" hidden></div>
+        <input type="text" id="refSearch" placeholder="Search references" autocomplete="off" style="margin:10px 0"/>
+        <div class="picks" id="refPicks"></div>
+        <div style="margin-top:8px"><button class="quiet" id="refMore" hidden>Show all</button></div>
+      </details>
+
+      <div id="sendNote"></div>
+      <button class="pri big" id="send" disabled>Send request</button>
+    </div>
+  </section>
+  <section>
+    <div class="shead"><h2>Your videos</h2></div>
+    <div class="sheet" id="videos"><div class="empty">Loading.</div></div>
+  </section>
+
+</div>
+<input type="file" id="shotFile" accept="image/*" hidden/>
+<input type="file" id="localFile" accept="video/*" hidden/>
+<div class="toast" id="toast" role="status" aria-live="polite"></div>
+
+<script>
+  // The Worker in front of this page checks the login and forwards /api to the Apps Script backend.
+  const API = "/api";
+  const STALE_DAYS = 21, REF_LIMIT = 8, SHOT_W = 1280;
+
+  const $ = id => document.getElementById(id);
+  const esc = s => String(s == null ? "" : s).replace(/[&<>"']/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
+  const ago = iso => { const s=(Date.now()-new Date(iso))/1000; if(s<90)return"just now"; if(s<3600)return Math.round(s/60)+" min ago"; if(s<86400)return Math.round(s/3600)+" hr ago"; const d=Math.round(s/86400); return d+(d===1?" day ago":" days ago"); };
+  const thumb = (id,w) => `https://drive.google.com/thumbnail?id=${encodeURIComponent(id)}&sz=w${w||480}`;
+  const preview = id => `https://drive.google.com/file/d/${encodeURIComponent(id)}/preview`;
+  const fmtT = s => { s=Math.max(0,Math.round(s)); return Math.floor(s/60)+":"+String(s%60).padStart(2,"0"); };
+  const noExt = n => String(n||"").replace(/\.[a-z0-9]{2,4}$/i,"").trim();
+  const baseOf = n => noExt(n).replace(/_v\d+$/i,"");
+  const verOf  = n => { const m=noExt(n).match(/_v(\d+)$/i); return m?+m[1]:1; };
+  const IC = { play:'<svg class="ic" viewBox="0 0 24 24"><path d="M7 5l12 7-12 7z"/></svg>', check:'<svg class="ic" viewBox="0 0 24 24"><path d="M5 12.5l4.5 4.5L19 7.5"/></svg>',
+               x:'<svg class="ic" viewBox="0 0 24 24"><path d="M6 6l12 12M18 6L6 18"/></svg>', pen:'<svg class="ic" viewBox="0 0 24 24"><path d="M4 20l4-1 11-11-3-3L5 16z"/></svg>' };
+  const store = { get(k,d){ try{ const v=localStorage.getItem(k); return v?JSON.parse(v):d; }catch(e){ return d; } }, set(k,v){ try{ localStorage.setItem(k,JSON.stringify(v)); }catch(e){} } };
+
+  const S = { videos:[], files:[], byId:{}, completions:[], queue:[], caps:{}, loaded:{list:false,done:false,queue:false},
+              mode:"new", video:null, target:null, rows:[], refs:new Map(), refAll:false, peek:null, open:null, openVer:null,
+              dupOk:false, localUrl:null, pendingShotRow:null, approvedLocal:store.get("vsl.approved",[]) };
+
+  let toastT; function toast(m,ms){ const t=$("toast"); t.textContent=m; t.classList.add("show"); clearTimeout(toastT); toastT=setTimeout(()=>t.classList.remove("show"),ms||3200); }
+  function setSync(ok,label){ $("sync").className="sync"+(ok?"":" stale"); $("syncLabel").textContent=label; }
+  async function get(action){ const r=await fetch(API+"?action="+action+"&t="+Date.now()); if(r.status===401){ location.href="/login"; throw new Error("signed out"); } return r.json(); }
+  async function post(body){ const r=await fetch(API,{method:"POST",headers:{"Content-Type":"text/plain;charset=utf-8"},body:JSON.stringify(body)}); if(r.status===401){ location.href="/login"; throw new Error("signed out"); } const d=await r.json(); if(!d.ok) throw new Error(d.error||"failed"); return d; }
+
+  // ---------- data ----------
+  async function loadList(){
+    try{ const d=await get("list");
+      S.videos=d.videos||[]; S.files=[...(d.videos||[]),...(d.inspiration||[])]; S.caps=d.caps||{};
+      S.byId={}; S.files.forEach(f=>{ if(!S.byId[f.id]) S.byId[f.id]=f; });
+      S.loaded.list=true; setSync(true,"Up to date "+new Date().toLocaleTimeString([],{hour:"numeric",minute:"2-digit"}));
+      renderVidPicks(); renderRefs(); renderVideos(); checkSend();
+      $("logHint").textContent = S.caps.upload ? "Paste a screenshot anywhere on this page to add it as a change." : "Paste a screenshot to add it as a change, then type the time it was taken at.";
+    }catch(e){ setSync(false,"Can't reach Drive. Retrying."); }
+  }
+  async function loadDone(){ try{ const d=await get("completions"); S.completions=d.files||[]; S.loaded.done=true; renderVideos(); }catch(e){} }
+  async function loadQueue(){ try{ const d=await get("queue"); S.queue=d.requests||[]; S.loaded.queue=true; renderVideos(); renderBriefs(); renderDup(); }catch(e){} }
+
+  const isOpen = r => r.status==="new" || r.status==="editing";
+  const isMarker = r => !r.video_id && r.change_type==="Approved";
+  function groups(){
+    const byName={}, byIdC={}; S.completions.forEach(f=>{ byName[f.name]=f; byIdC[f.id]=f; });
+    const G=new Map(), vidBase={}, approved=new Set(S.approvedLocal), reqOf={};
+    const grp=k=>{ if(!G.has(k)) G.set(k,{key:k,title:"",versions:[],reqs:[],raw:null}); return G.get(k); };
+    S.completions.forEach(f=>grp(baseOf(f.name)).versions.push(f));
+    const rows=[...S.queue].reverse();                       // oldest first
+    rows.forEach(r=>{ if(isMarker(r)) approved.add(r.video_name); });
+    rows.forEach(r=>{ if(r.result_name && byName[r.result_name]){ const b=baseOf(r.result_name); reqOf[r.result_name]=r;
+        if(r.status==="approved") approved.add(r.result_name);
+        if(r.video_id){ vidBase[r.video_id]=b; if(!byIdC[r.video_id] && !grp(b).title) grp(b).title=noExt(r.video_name); } } });
+    rows.forEach(r=>{ if(isMarker(r) || r.status==="duplicate" || !r.video_id) return;
+      if(!(isOpen(r) || r.status==="failed")) return;
+      const b = vidBase[r.video_id] || (byIdC[r.video_id] && baseOf(byIdC[r.video_id].name));
+      const g = grp(b || "raw:"+r.video_id); g.reqs.push(r);
+      if(!b){ g.title=noExt(r.video_name); g.raw=r.video_id; } });
+    const out=[...G.values()].filter(g=>g.versions.length||g.reqs.length);
+    out.forEach(g=>{ g.versions.sort((a,b)=>verOf(b.name)-verOf(a.name) || b.modified.localeCompare(a.modified));
+      g.title = g.title || g.key.replace(/_/g," ");
+      g.latest=g.versions[0]||null; g.openReqs=g.reqs.filter(isOpen); g.failed=g.reqs.some(r=>r.status==="failed") && !g.openReqs.length;
+      g.approved = !!(g.latest && approved.has(g.latest.name));
+      g.state = g.openReqs.length ? "edit" : g.failed ? "fail" : g.approved ? "appr" : "ready";
+      g.when = g.openReqs.length ? g.openReqs[g.openReqs.length-1].created : g.latest ? g.latest.modified : (g.reqs[0]||{}).created;
+      g.reqOf=reqOf; });
+    const rank={edit:0,fail:1,ready:2,appr:3};
+    return out.sort((a,b)=>rank[a.state]-rank[b.state] || String(b.when).localeCompare(String(a.when)));
+  }
+
+  // ---------- your videos ----------
+  function renderVideos(){
+    const el=$("videos"); if(!(S.loaded.done && S.loaded.queue)) return;
+    const gs=groups(); if(!gs.length){ el.innerHTML='<div class="empty">Nothing here yet. Send your first edit below.</div>'; return; }
+    const fresh=g=> g.state==="edit" || g.state==="fail" || (g.state==="ready" && (Date.now()-new Date(g.when))/864e5 < STALE_DAYS);
+    const a=gs.filter(fresh), b=gs.filter(g=>!fresh(g));
+    el.innerHTML = (a.length?a.map(card).join(""):'<div class="empty">Nothing waiting on you.</div>')
+      + (b.length?`<details class="earlier"${S.open && b.some(g=>g.key===S.open)?" open":""}><summary>Earlier (${b.length})</summary>${b.map(card).join("")}</details>`:"");
+    el.querySelectorAll("[data-act]").forEach(x=>x.onclick=()=>act(x.dataset.act,x.dataset.key,x.dataset.id));
+  }
+  function card(g){
+    const cur = g.key===S.open ? (g.versions.find(v=>v.id===S.openVer)||g.latest) : g.latest;
+    const tid = g.latest ? g.latest.id : g.raw;
+    const stt = { edit:`<span class="mark edit">Being edited</span><span>sent ${ago(g.when)}${g.latest?", new version on the way":""}</span>`,
+                  fail:`<span class="mark fail">Download failed</span><span>Check the file in Drive, then send again.</span>`,
+                  ready:`<span class="mark ready">Ready to watch</span><span>delivered ${ago(g.when)}</span>`,
+                  appr:`<span class="mark appr">Approved</span><span>${ago(g.when)}</span>` }[g.state];
+    const vers = g.versions.length>1 || g.key===S.open ? `<div class="vers">${g.versions.map(v=>{ const n=verOf(v.name);
+        return `<button class="ver rv${((n-1)%6)+1}" data-act="ver" data-key="${esc(g.key)}" data-id="${v.id}" aria-pressed="${g.key===S.open && cur && v.id===cur.id}">v${n}</button>`; }).join("")}</div>` : "";
+    const acts = g.latest ? `<div class="acts">
+        <button data-act="watch" data-key="${esc(g.key)}" data-id="${g.latest.id}">${IC.play}${g.key===S.open?"Close":"Watch"}</button>
+        <button data-act="changes" data-key="${esc(g.key)}" data-id="${(cur||g.latest).id}">${IC.pen}Request changes</button>
+        ${g.approved?"":`<button class="ok" data-act="approve" data-key="${esc(g.key)}" data-id="${g.latest.id}">${IC.check}Approve</button>`}</div>` : `<div class="acts"></div>`;
+    let watch="";
+    if(g.key===S.open && cur){ const r=g.reqOf[cur.name];
+      watch=`<div class="watch"><iframe class="player" src="${preview(cur.id)}" allow="autoplay; fullscreen" allowfullscreen title="${esc(cur.name)}"></iframe>
+        <div><h3>${esc(cur.name)}</h3>${r&&r.notes?`<div class="asked">${esc(r.notes)}</div>`:`<p class="help" style="margin:0">No notes were saved with this version.</p>`}
+        <p style="margin:12px 0 0"><a class="btn" href="${esc(cur.url)}" target="_blank" rel="noopener">Open in Drive</a></p></div></div>`; }
+    return `<div class="vid"><span class="th">${tid?`<img src="${thumb(tid,320)}" alt="" loading="lazy" onerror="this.remove()"/>`:""}</span>
+      <div><div class="nm">${esc(g.title)}</div><div class="st">${stt}</div>${vers}</div>${acts}${watch}</div>`;
+  }
+  function act(a,key,id){
+    if(a==="watch"){ if(S.open===key){ S.open=null; S.openVer=null; } else { S.open=key; S.openVer=id; } renderVideos(); }
+    if(a==="ver"){ S.open=key; S.openVer=id; renderVideos(); }
+    if(a==="changes"){ const f=S.completions.find(c=>c.id===id); if(f) startChanges(f); }
+    if(a==="approve"){ approve(id); }
+  }
+  async function approve(id){
+    const f=S.completions.find(c=>c.id===id); if(!f) return;
+    const r=S.queue.find(q=>q.result_name===f.name);
+    S.approvedLocal=[...new Set([...S.approvedLocal,f.name])].slice(-200); store.set("vsl.approved",S.approvedLocal); renderVideos();
+    try{ await post(r ? {action:"update",id:r.id,status:"approved",result_url:r.result_url||f.url,result_name:f.name}
+                      : {video_id:"",video_name:f.name,inspiration_ids:[],inspiration_names:[],change_type:"Approved",notes:""});
+         toast("Approved: "+f.name); setTimeout(loadQueue,1500);
+    }catch(e){ toast("Couldn't save the approval. Check your connection and try again."); }
+  }
+
+  // ---------- composer: mode ----------
+  function startNew(){ S.mode="new"; S.target=null; S.rows=[]; clearLocal(); renderMode(); renderRows(); $("composer").scrollIntoView({block:"start"}); }
+  function startChanges(f){ S.mode="changes"; S.target=f; S.rows=[newRow()]; clearLocal(); renderMode(); renderRows(); $("composer").scrollIntoView({block:"start"}); }
+  function renderMode(){
+    const ch=S.mode==="changes";
+    $("compTitle").textContent = ch ? "Request changes" : "New edit";
+    $("fVideo").hidden=ch; $("fChange").hidden=ch;
+    $("briefLabel").textContent = ch ? "Anything that applies to the whole video (optional)" : "Overall direction";
+    $("logLabel").textContent = ch ? "What to change" : "Notes on specific moments";
+    const mb=$("modebar"); mb.hidden=!ch;
+    if(ch){ mb.innerHTML=`<span>Changes to <b>${esc(S.target.name)}</b></span><button class="quiet" id="cancelCh">Start a new edit instead</button>`; $("cancelCh").onclick=startNew; }
+    renderStage(); checkSend();
+  }
+  function stageFile(){ return S.mode==="changes" ? S.target : (S.video ? S.byId[S.video] : null); }
+  function renderStage(){
+    const f=stageFile(), st=$("stage"), on=!!f && (S.mode==="changes" || S.rows.length>0);
+    st.hidden=!on; $("work").className="work"+(on?" two":""); if(!on){ st.innerHTML=""; return; }
+    if(S.localUrl){
+      st.innerHTML=`<video id="lv" src="${S.localUrl}" controls playsinline></video>
+        <div class="bar"><button class="pri" id="grab">${IC.pen}Add a change at this moment</button><button class="quiet" id="unlocal">Close file</button></div>`;
+      $("grab").onclick=grab; $("unlocal").onclick=()=>{ clearLocal(); renderStage(); };
+    } else if(st.dataset.id!==f.id || !st.querySelector("iframe")){
+      st.innerHTML=`<iframe class="player" src="${preview(f.id)}" allow="autoplay; fullscreen" allowfullscreen title="${esc(f.name)}"></iframe>
+        <p class="help">Pause where you want a change and type the time into the row.</p>
+        <div class="bar"><button class="quiet" id="openLocal">Or open the file from your computer to grab frames in one click</button></div>`;
+      $("openLocal").onclick=()=>$("localFile").click();
+    }
+    st.dataset.id=f.id;
+  }
+  function clearLocal(){ if(S.localUrl){ URL.revokeObjectURL(S.localUrl); S.localUrl=null; } const st=$("stage"); st.innerHTML=""; st.dataset.id=""; }
+  $("localFile").onchange=e=>{ const f=e.target.files[0]; e.target.value=""; if(!f) return; clearLocal(); S.localUrl=URL.createObjectURL(f); if(!S.rows.length) S.rows=[]; renderStage(); };
+  function grab(){
+    const v=$("lv"); if(!v || !v.videoWidth){ toast("Press play first so the video loads."); return; }
+    const w=Math.min(SHOT_W,v.videoWidth), h=Math.round(w*v.videoHeight/v.videoWidth), c=document.createElement("canvas"); c.width=w; c.height=h;
+    c.getContext("2d").drawImage(v,0,0,w,h); v.pause();
+    const empty=S.rows.find(r=>!r.from && !r.to && !r.text && !r.img);
+    const r=empty||newRow(); r.from=fmtT(v.currentTime); r.img=c.toDataURL("image/jpeg",.82); if(!empty) S.rows.push(r);
+    renderRows(r.id);
+  }
+
+  // ---------- composer: video picker + duplicate warning ----------
+  function renderVidPicks(){
+    const el=$("vidPicks");
+    if(!S.videos.length){ el.innerHTML=""; $("vidHelp").textContent="No videos in the Drive folder yet. Drop one in and it shows up here."; return; }
+    if(S.video && !S.videos.some(v=>v.id===S.video)) S.video=null;
+    $("vidHelp").textContent="Videos you drop in the Drive folder show up here.";
+    el.innerHTML=S.videos.map(v=>`<button class="pick" data-id="${v.id}" aria-pressed="${v.id===S.video}"><span class="th" style="border-radius:0"><img src="${thumb(v.id,360)}" alt="" loading="lazy" onerror="this.remove()"/></span>
+      <span class="tick">${IC.check}</span><span class="cap">${esc(noExt(v.name))}<small>added ${ago(v.modified)}</small></span></button>`).join("");
+    el.querySelectorAll(".pick").forEach(b=>b.onclick=()=>{ S.video = S.video===b.dataset.id ? null : b.dataset.id; S.dupOk=false; S.refs.delete(S.video); clearLocal(); renderVidPicks(); renderRefs(); renderDup(); renderStage(); checkSend(); });
+  }
+  function dupFor(){ if(S.mode!=="new" || !S.video) return null; return S.queue.find(r=>r.video_id===S.video && isOpen(r)) || null; }
+  function renderDup(){
+    const d=dupFor(), el=$("dupWarn");
+    el.innerHTML = d ? `<div class="note warn">This video already has a request in progress, sent ${ago(d.created)}. Sending again starts a second edit.
+      <label><input type="checkbox" id="dupOk" ${S.dupOk?"checked":""}/> Send a second request anyway</label></div>` : "";
+    if(d) $("dupOk").onchange=e=>{ S.dupOk=e.target.checked; checkSend(); };
+    checkSend();
+  }
+
+  // ---------- composer: saved briefs ----------
+  function renderBriefs(){
+    const mine=store.get("vsl.briefs",[]), seen=new Set(mine.map(b=>b.text.trim())), past=[];
+    S.queue.forEach(r=>{ const t=briefOf(r.notes).trim(); const nm="From "+noExt(r.video_name).replace(/\s*[\u2014-].*$/,"").slice(0,26); if(t.length>60 && !seen.has(t) && past.length<3 && !past.some(b=>b.name===nm)){ seen.add(t); past.push({name:nm,text:t}); } });
+    $("briefs").innerHTML = mine.map((b,i)=>`<button class="chip" data-m="${i}" title="${esc(b.text.slice(0,300))}"><span>${esc(b.name)}</span><span class="x" data-del="${i}" aria-label="Delete this brief">${IC.x}</span></button>`).join("")
+      + past.map((b,i)=>`<button class="chip" data-p="${i}" title="${esc(b.text.slice(0,300))}"><span>${esc(b.name)}</span></button>`).join("");
+    $("briefs").querySelectorAll(".chip").forEach(c=>c.onclick=e=>{
+      const del=e.target.closest("[data-del]"); if(del){ mine.splice(+del.dataset.del,1); store.set("vsl.briefs",mine); renderBriefs(); return; }
+      const b = c.dataset.m!=null ? mine[+c.dataset.m] : past[+c.dataset.p]; const ta=$("brief");
+      ta.value = ta.value.trim() ? ta.value.trim()+"\n\n"+b.text : b.text; checkSend(); toast("Brief added. Edit it before sending if you need to."); });
+  }
+  $("saveBrief").onclick=()=>{ const t=$("brief").value.trim(); if(!t){ toast("Write the brief first, then save it."); return; }
+    const name=prompt("Name this brief (for example: Grove Wealth style)"); if(!name) return;
+    const mine=store.get("vsl.briefs",[]); mine.unshift({name:name.trim().slice(0,40),text:t}); store.set("vsl.briefs",mine.slice(0,12)); renderBriefs(); toast("Saved. It will be here next time on this computer."); };
+  function briefOf(notes){ notes=String(notes||"").replace(/\n*Sent from the portal by \S+ \[[0-9a-f]+\]\s*$/,""); const i=notes.indexOf("OVERALL DIRECTION\n"); if(i<0) return /^(CHANGES|ABOUT|REFERENCES)\b/.test(notes)?"":notes; return notes.slice(i+18).split(/\n\n(?:CHANGES|REFERENCES|ABOUT)\b/)[0]; }
+
+  // ---------- composer: the change list ----------
+  let rid=0; function newRow(){ return {id:++rid,from:"",to:"",text:"",img:null}; }
+  function renderRows(focusId){
+    const el=$("rows");
+    el.innerHTML = S.rows.length ? S.rows.map((r,i)=>`<div class="row" data-id="${r.id}">
+        <div class="n">${i+1}</div>
+        <div class="t"><input type="text" inputmode="numeric" data-k="from" value="${esc(r.from)}" placeholder="0:33" aria-label="Change ${i+1}: time it starts"/>
+          <input type="text" inputmode="numeric" data-k="to" value="${esc(r.to)}" placeholder="to 0:42" aria-label="Change ${i+1}: time it ends, optional"/></div>
+        <div class="s"><button class="shot${r.img?" has":""}" data-shot aria-label="Change ${i+1}: ${r.img?"replace":"add"} screenshot">${r.img?`<img src="${r.img}" alt="Screenshot for change ${i+1}"/>`:"Add screenshot"}</button></div>
+        <div class="c"><textarea data-k="text" placeholder="What should change here?" aria-label="Change ${i+1}: what to change">${esc(r.text)}</textarea></div>
+        <button class="del" data-del aria-label="Remove change ${i+1}">${IC.x}</button></div>`).join("")
+      : `<div class="empty" style="padding:16px 12px">No changes added.</div>`;
+    el.querySelectorAll(".row").forEach(row=>{ const r=S.rows.find(x=>x.id===+row.dataset.id);
+      row.querySelectorAll("[data-k]").forEach(inp=>{ inp.oninput=()=>{ r[inp.dataset.k]=inp.value; checkSend(); };
+        if(inp.dataset.k!=="text") inp.onblur=()=>{ const v=normT(inp.value); if(v!==inp.value){ inp.value=v; r[inp.dataset.k]=v; } }; });
+      row.querySelector("[data-shot]").onclick=()=>{ S.pendingShotRow=r.id; $("shotFile").click(); };
+      row.querySelector("[data-del]").onclick=()=>{ S.rows=S.rows.filter(x=>x!==r); renderRows(); }; });
+    if(focusId){ const t=el.querySelector(`.row[data-id="${focusId}"] textarea`); if(t) t.focus(); }
+    const bare=S.mode==="new" && !S.rows.length; $("logField").hidden=bare; $("momentAsk").hidden=!bare;
+    renderStage(); checkSend();
+  }
+  function normT(v){ v=String(v||"").trim().replace(/^to\s*/i,""); if(/^\d{3,4}$/.test(v)) v=v.slice(0,-2)+":"+v.slice(-2); else if(/^\d{1,2}$/.test(v)) v="0:"+v.padStart(2,"0"); return v; }
+  $("addRow").onclick=$("addMoment").onclick=()=>{ const r=newRow(); S.rows.push(r); renderRows(r.id); };
+  function readImage(file,cb){ const fr=new FileReader(); fr.onload=()=>{ const im=new Image(); im.onload=()=>{ const w=Math.min(SHOT_W,im.width), h=Math.round(w*im.height/im.width), c=document.createElement("canvas"); c.width=w; c.height=h;
+      c.getContext("2d").drawImage(im,0,0,w,h); cb(c.toDataURL("image/jpeg",.82)); }; im.src=fr.result; }; fr.readAsDataURL(file); }
+  function addShot(file,rowId){ readImage(file,data=>{ let r=S.rows.find(x=>x.id===rowId) || S.rows.find(x=>!x.img && !x.text && !x.from); if(!r){ r=newRow(); S.rows.push(r); } r.img=data; renderRows(r.id); }); }
+  $("shotFile").onchange=e=>{ const f=e.target.files[0]; e.target.value=""; if(f) addShot(f,S.pendingShotRow); S.pendingShotRow=null; };
+  document.addEventListener("paste",e=>{ const it=[...(e.clipboardData||{}).items||[]].find(i=>i.type.indexOf("image")===0); if(!it) return; e.preventDefault(); addShot(it.getAsFile(),null); toast("Screenshot added as a change."); });
+
+  // ---------- composer: references ----------
+  function refFiles(){ const skip=new Set([S.video, S.target&&S.target.id]); return S.files.filter((f,i,a)=>!skip.has(f.id) && a.findIndex(x=>x.id===f.id)===i); }
+  function renderRefs(){
+    const q=$("refSearch").value.trim().toLowerCase(); let list=refFiles().filter(f=>!q || f.name.toLowerCase().includes(q));
+    list.sort((a,b)=>(S.refs.has(b.id)-S.refs.has(a.id)));
+    const cut = !S.refAll && !q && list.length>REF_LIMIT; const shown = cut ? list.slice(0,Math.max(REF_LIMIT,S.refs.size)) : list;
+    $("refMore").hidden=!cut; $("refMore").textContent=`Show all ${list.length}`;
+    $("refPicks").innerHTML = shown.length ? shown.map(f=>`<button class="pick" data-id="${f.id}" aria-pressed="${S.refs.has(f.id)}"><span class="th" style="border-radius:0"><img src="${thumb(f.id,360)}" alt="" loading="lazy" onerror="this.remove()"/></span>
+        ${f.isVideo?`<span class="play" data-play="${f.id}">${IC.play}Play</span>`:`<span class="play" data-play="${f.id}">View</span>`}<span class="tick">${IC.check}</span>
+        <span class="cap">${esc(noExt(f.name))}<small>${f.isVideo?"Video":"Image"}</small></span></button>`).join("") : `<p class="help">No references match that search.</p>`;
+    $("refPicks").querySelectorAll(".pick").forEach(b=>b.onclick=e=>{ const id=b.dataset.id;
+      if(e.target.closest("[data-play]")){ S.peek = S.peek===id ? null : id; renderPeek(); return; }
+      if(S.refs.has(id)) S.refs.delete(id); else S.refs.set(id,{at:"",text:""}); renderRefs(); });
+    renderRefNotes();
+  }
+  function renderPeek(){ const el=$("peek"), f=S.peek && S.byId[S.peek]; el.hidden=!f; if(!f){ el.innerHTML=""; return; }
+    el.innerHTML = (f.isVideo ? `<iframe class="player" style="max-width:640px" src="${preview(f.id)}" allow="autoplay; fullscreen" allowfullscreen title="${esc(f.name)}"></iframe>` : `<img src="${thumb(f.id,1200)}" alt="${esc(f.name)}" style="max-width:100%;max-height:60vh;border-radius:8px;display:block"/>`)
+      + `<div style="display:flex;gap:8px;margin-top:8px;flex-wrap:wrap"><button id="peekUse" class="pri">${S.refs.has(f.id)?"Added as a reference":"Use as a reference"}</button><button id="peekClose">Close preview</button></div>`;
+    $("peekUse").disabled=S.refs.has(f.id); $("peekUse").onclick=()=>{ S.refs.set(f.id,{at:"",text:""}); renderRefs(); renderPeek(); }; $("peekClose").onclick=()=>{ S.peek=null; renderPeek(); };
+    el.scrollIntoView({block:"nearest"}); }
+  function renderRefNotes(){ const el=$("refNotes"); el.hidden=!S.refs.size;
+    el.innerHTML=[...S.refs].map(([id,n])=>{ const f=S.byId[id]; if(!f) return ""; return `<div class="refnote" data-id="${id}"><div><span class="th"><img src="${thumb(id,320)}" alt="" loading="lazy" onerror="this.remove()"/></span><div class="rn">${esc(noExt(f.name))}</div></div>
+        ${f.isVideo?`<input type="text" inputmode="numeric" data-k="at" value="${esc(n.at)}" placeholder="1:12" aria-label="Moment in ${esc(f.name)}"/>`:`<span></span>`}
+        <div class="c"><textarea data-k="text" style="min-height:58px" placeholder="${f.isVideo?"What do you like at that moment?":"What should we take from this?"}" aria-label="What you like about ${esc(f.name)}">${esc(n.text)}</textarea></div>
+        <button class="del" style="padding:6px;min-height:34px;border-color:transparent;justify-content:center" data-del aria-label="Remove ${esc(f.name)}">${IC.x}</button></div>`; }).join("");
+    el.querySelectorAll(".refnote").forEach(row=>{ const n=S.refs.get(row.dataset.id);
+      row.querySelectorAll("[data-k]").forEach(inp=>{ inp.oninput=()=>{ n[inp.dataset.k]=inp.value; }; if(inp.dataset.k==="at") inp.onblur=()=>{ inp.value=n.at=normT(inp.value); }; });
+      row.querySelector("[data-del]").onclick=()=>{ S.refs.delete(row.dataset.id); renderRefs(); }; }); }
+  $("refSearch").oninput=renderRefs; $("refMore").onclick=()=>{ S.refAll=true; renderRefs(); };
+
+  // ---------- send ----------
+  const usedRows = () => S.rows.filter(r=>r.text.trim() || r.img || r.from.trim());
+  function problem(){
+    if(!S.loaded.list) return " ";
+    if(S.mode==="new" && !S.video) return "Pick a video.";
+    if(S.mode==="new" && dupFor() && !S.dupOk) return " ";
+    const rows=usedRows();
+    if(S.mode==="changes" && !rows.length && !$("brief").value.trim()) return "Add at least one change.";
+    for(let i=0;i<rows.length;i++){ const r=rows[i], n=S.rows.indexOf(r)+1;
+      if(!r.text.trim()) return `Say what should change in row ${n}.`;
+      if(r.img && !r.from.trim() && !S.caps.upload) return `Add the time for row ${n} so the editor can find that frame.`; }
+    return "";
+  }
+  function checkSend(){ const p=problem(); $("send").disabled=!!p; $("sendNote").innerHTML = p.trim() && (usedRows().length || S.mode==="changes") ? `<p class="help" style="margin:0 0 10px">${esc(p)}</p>` : ""; }
+  $("brief").oninput=checkSend;
+  function buildNotes(rows){
+    const parts=[], brief=$("brief").value.trim();
+    if(S.mode==="changes"){ const r=S.queue.find(q=>q.result_name===S.target.name); parts.push("ABOUT\nChanges to the delivered edit "+S.target.name+(r?" (request "+r.id+")":"")); }
+    if(rows.length) parts.push("CHANGES ("+rows.length+")\n"+rows.map((r,i)=>{ const t=r.from.trim()?(r.from.trim()+(r.to.trim()?" to "+r.to.trim():"")):"no time given";
+      return (i+1)+". ["+t+"] "+r.text.trim().replace(/\n+/g,"\n   ")+(r.img?(S.caps.upload?"\n   (screenshot attached: change-"+(i+1)+".jpg)":"\n   (he had a screenshot of this frame)"):""); }).join("\n"));
+    const refs=[...S.refs].filter(([id])=>S.byId[id]);
+    if(refs.some(([,n])=>n.at.trim()||n.text.trim())) parts.push("REFERENCES\n"+refs.map(([id,n])=>"- "+S.byId[id].name+(n.at.trim()?" at "+n.at.trim():"")+(n.text.trim()?": "+n.text.trim():"")).join("\n"));
+    if(brief) parts.push((parts.length?"OVERALL DIRECTION\n":"")+brief);
+    return parts.join("\n\n");
+  }
+  $("send").onclick=async()=>{
+    if(problem()) return;
+    const rows=usedRows(), tgt = S.mode==="changes" ? S.target : S.byId[S.video], refIds=[...S.refs.keys()].filter(id=>S.byId[id]);
+    const body={ video_id:tgt.id, video_name:tgt.name, inspiration_ids:refIds, inspiration_names:refIds.map(id=>S.byId[id].name),
+                 change_type: S.mode==="changes" ? "Changes to a delivered edit" : $("change").value, notes:buildNotes(rows) };
+    if(S.caps.upload){ const shots=rows.map((r,i)=>r.img?{name:"change-"+(i+1)+".jpg",data:r.img.split(",")[1]}:null).filter(Boolean); if(shots.length) body.shots=shots; }
+    const btn=$("send"); btn.disabled=true; btn.textContent="Sending";
+    try{ await post(body); }catch(e){ btn.textContent="Send request"; checkSend(); toast("Couldn't send. Check your connection and try again.",5000); return; }
+    let found=false;
+    for(const wait of [1500,3000,5000]){ await new Promise(r=>setTimeout(r,wait)); await loadQueue();
+      if(S.queue.some(q=>q.video_id===body.video_id && String(q.notes).indexOf(body.notes)===0 && Date.now()-new Date(q.created)<300000)){ found=true; break; } }
+    btn.textContent="Send request";
+    if(found){ toast("Request received. You'll get an email when the edit is ready.",5000); $("brief").value=""; S.rows=[]; S.refs.clear(); S.dupOk=false; S.video=null; S.mode="new"; S.target=null; clearLocal();
+      renderMode(); renderRows(); renderVidPicks(); renderRefs(); window.scrollTo({top:0}); }
+    else { checkSend(); toast("Sent, but it hasn't shown up in the list yet. Check Your videos before sending again.",7000); }
+  };
+
+  renderMode(); renderRows(); renderBriefs();
+  loadList(); loadDone(); loadQueue();
+  setInterval(loadList,20000); setInterval(()=>{ loadDone(); loadQueue(); },30000);
+  window.addEventListener("focus",()=>{ loadList(); loadQueue(); });
+</script>
+</body>
+</html>

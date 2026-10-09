@@ -161,6 +161,21 @@ def _send_mail(to_addr, cc_addr, subject, body_lines):
     except Exception as e:
         print(f"  ! email error: {e}")
 
+def from_portal(r):
+    """True only when the request was signed by the login-protected portal (the Worker adds the signature).
+    Anything posted straight at the Apps Script URL has no valid signature and must never start an unattended edit."""
+    import re, hmac, hashlib
+    try:
+        key = json.load(open(os.path.join(os.path.dirname(os.path.abspath(__file__)), ".portal_secrets.json")))["SIGN_KEY"]
+    except Exception:
+        return False
+    m = re.search(r"^(.*?)\n*Sent from the portal by (\S+) \[([0-9a-f]{24})\]\s*$", r.get("notes") or "", re.S)
+    if not m: return False
+    want = hmac.new(key.encode(), ((r.get("video_id") or "") + "\n" + m.group(1) + "\n" + m.group(2)).encode(), hashlib.sha256).hexdigest()[:24]
+    return hmac.compare_digest(want, m.group(3))
+
+AUTO_QUEUE = os.path.expanduser("~/vsl-edit/auto-queue")
+
 def auto():
     """Auto-poller: download + stage every real NEW request, then alert Vince by email.
     The creative edit still needs a Claude session — this just preps + notifies."""
@@ -179,6 +194,8 @@ def auto():
         busy.add(sig(r))
         try:
             ingest(r); staged.append(r)
+            if from_portal(r):   # hand it to the auto-edit runner (if Vince has switched it on, it watches this folder)
+                os.makedirs(AUTO_QUEUE, exist_ok=True); open(os.path.join(AUTO_QUEUE, r["id"]), "w").write(r.get("video_name") or "")
         except Exception as e:
             print(f"  ! ingest failed {r.get('id')}: {e}")
     if not staged:
@@ -203,7 +220,7 @@ def auto():
                     f"Video: {r.get('video_name')}", f"Needs: {r.get('change_type')}",
                     f"Inspiration: {r.get('inspiration_names') or '(none)'}", f"Notes: {r.get('notes') or ''}", "",
                     "You'll get a second email with the review link when it is finished.", "",
-                    "Portal: https://vincestars-cloud.github.io/vsl-portal/", "", "- VSL Edit Portal"])
+                    "Portal: https://edits.vincestars.com/", "", "- VSL Edit Portal"])
 
 def done(rid, path):
     name = os.path.basename(path)
