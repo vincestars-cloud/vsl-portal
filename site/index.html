@@ -67,7 +67,14 @@
   .rv1{ background:var(--r1);} .rv2{ background:var(--r2);} .rv3{ background:var(--r3);} .rv4{ background:var(--r4);} .rv5{ background:var(--r5);} .rv6{ background:var(--r6);}
   .acts{ display:flex; gap:8px; flex-wrap:wrap; justify-content:flex-end; }
   .watch{ grid-column:1 / -1; display:grid; grid-template-columns:minmax(0,1.7fr) minmax(0,1fr); gap:18px; padding:4px 0 6px; }
-  .player{ aspect-ratio:16/9; width:100%; border:0; border-radius:8px; background:#0E1116; display:block; }
+  .player{ aspect-ratio:16/9; width:100%; border:0; border-radius:8px; background:#0E1116; display:flex; align-items:center; justify-content:center; position:relative; overflow:hidden; text-decoration:none; }
+  /* ---- video picker scroll row ---- */
+  .vscroll-wrap{ position:relative; }
+  .vscroll{ display:flex; gap:10px; overflow-x:auto; scroll-behavior:smooth; scrollbar-width:none; padding:2px 2px 8px; }
+  .vscroll::-webkit-scrollbar{ display:none; }
+  .vscroll .pick{ flex:none; width:162px; }
+  .varr{ position:absolute; top:45%; transform:translateY(-50%); background:#fff; border:1px solid var(--rule); border-radius:50%; width:34px; height:34px; min-height:34px; padding:0; display:flex; align-items:center; justify-content:center; box-shadow:0 2px 8px rgba(0,0,0,.12); z-index:2; }
+  .varr.left{ left:-15px; } .varr.right{ right:-15px; }
   .asked{ font-size:14px; color:var(--soft); white-space:pre-wrap; overflow-wrap:anywhere; max-height:210px; overflow:auto; border:1px solid var(--rule2); border-radius:8px; padding:10px 12px; background:#FAFBFC; }
   details.earlier > summary{ cursor:pointer; padding:14px 16px; font-weight:650; font-size:14px; color:var(--soft); border-top:1px solid var(--rule2); }
   .empty{ padding:22px 16px; color:var(--soft); }
@@ -154,7 +161,10 @@
       <h1>Edit requests</h1>
       <p class="lede">Pick a video, say what you need, send.</p>
     </div>
-    <div class="sync stale" id="sync"><i></i><span id="syncLabel">Connecting</span></div>
+    <div style="display:flex;align-items:center;gap:12px;flex-wrap:wrap">
+      <a class="btn" href="https://drive.google.com/drive/folders/1nGlEFhEXjf_x2-Zu3CogYmO_lu3fWjn0" target="_blank" rel="noopener" style="font-size:13px;padding:7px 12px;min-height:36px"><svg class="ic" viewBox="0 0 24 24"><path d="M22 19a2 2 0 01-2 2H4a2 2 0 01-2-2V5a2 2 0 012-2h5l2 3h9a2 2 0 012 2z"/></svg>Browse Drive folder</a>
+      <div class="sync stale" id="sync"><i></i><span id="syncLabel">Connecting</span></div>
+    </div>
   </header>
 
   <section id="composer" style="margin-top:0">
@@ -164,7 +174,11 @@
 
       <div class="field" id="fVideo">
         <label class="f">Video</label>
-        <div class="picks" id="vidPicks"></div>
+        <div class="vscroll-wrap">
+          <button class="varr left" id="vArrL" aria-label="Scroll left" hidden><svg class="ic" viewBox="0 0 24 24"><path d="M15 18l-6-6 6-6"/></svg></button>
+          <div class="vscroll" id="vidPicks"></div>
+          <button class="varr right" id="vArrR" aria-label="Scroll right" hidden><svg class="ic" viewBox="0 0 24 24"><path d="M9 18l6-6-6-6"/></svg></button>
+        </div>
         <p class="help" id="vidHelp">Videos you drop in the Drive folder show up here.</p>
         <div id="dupWarn"></div>
       </div>
@@ -326,7 +340,11 @@
         ${g.approved?"":`<button class="ok" data-act="approve" data-key="${esc(g.key)}" data-id="${g.latest.id}">${IC.check}Approve</button>`}</div>` : `<div class="acts"></div>`;
     let watch="";
     if(g.key===S.open && cur){ const r=g.reqOf[cur.name];
-      watch=`<div class="watch"><iframe class="player" src="${preview(cur.id)}" allow="autoplay; fullscreen" allowfullscreen title="${esc(cur.name)}"></iframe>
+      watch=`<div class="watch">
+        <a class="player" href="${esc(cur.url)}" target="_blank" rel="noopener">
+          <img src="${thumb(cur.id,960)}" alt="" style="position:absolute;inset:0;width:100%;height:100%;object-fit:cover;opacity:.55" loading="lazy"/>
+          <span style="position:relative;z-index:1;background:rgba(255,255,255,.93);color:#14171F;border-radius:8px;padding:12px 20px;font-weight:700;font-size:14px;display:inline-flex;align-items:center;gap:7px">${IC.play}Watch in Drive</span>
+        </a>
         <div><h3>${esc(cur.name)}</h3>${r&&r.notes?`<div class="asked">${esc(r.notes)}</div>`:`<p class="help" style="margin:0">No notes were saved with this version.</p>`}
         <p style="margin:12px 0 0"><a class="btn" href="${esc(cur.url)}" target="_blank" rel="noopener">Open in Drive</a></p></div></div>`; }
     return `<div class="vid"><span class="th">${tid?`<img src="${thumb(tid,320)}" alt="" loading="lazy" onerror="this.remove()"/>`:""}</span>
@@ -369,9 +387,12 @@
       st.innerHTML=`<video id="lv" src="${S.localUrl}" controls playsinline></video>
         <div class="bar"><button class="pri" id="grab">${IC.pen}Add a change at this moment</button><button class="quiet" id="unlocal">Close file</button></div>`;
       $("grab").onclick=grab; $("unlocal").onclick=()=>{ clearLocal(); renderStage(); };
-    } else if(st.dataset.id!==f.id || !st.querySelector("iframe")){
-      st.innerHTML=`<iframe class="player" src="${preview(f.id)}" allow="autoplay; fullscreen" allowfullscreen title="${esc(f.name)}"></iframe>
-        <p class="help">Pause where you want a change and type the time into the row.</p>
+    } else if(st.dataset.id!==f.id || !st.querySelector(".player")){
+      st.innerHTML=`<a class="player" href="${esc(f.url)}" target="_blank" rel="noopener" style="max-height:62vh">
+          <img src="${thumb(f.id,960)}" alt="" style="position:absolute;inset:0;width:100%;height:100%;object-fit:cover;opacity:.55" loading="lazy"/>
+          <span style="position:relative;z-index:1;background:rgba(255,255,255,.93);color:#14171F;border-radius:8px;padding:12px 20px;font-weight:700;font-size:14px;display:inline-flex;align-items:center;gap:7px">${IC.play}Open in Drive</span>
+        </a>
+        <p class="help">Open in Drive, pause where you want a change, and type the time into the row.</p>
         <div class="bar"><button class="quiet" id="openLocal">Or open the file from your computer to grab frames in one click</button></div>`;
       $("openLocal").onclick=()=>$("localFile").click();
     }
@@ -391,12 +412,24 @@
   // ---------- composer: video picker + duplicate warning ----------
   function renderVidPicks(){
     const el=$("vidPicks");
-    if(!S.videos.length){ el.innerHTML=""; $("vidHelp").textContent="No videos in the Drive folder yet. Drop one in and it shows up here."; return; }
-    if(S.video && !S.videos.some(v=>v.id===S.video)) S.video=null;
-    $("vidHelp").textContent="Videos you drop in the Drive folder show up here.";
-    el.innerHTML=S.videos.map(v=>`<button class="pick" data-id="${v.id}" aria-pressed="${v.id===S.video}"><span class="th" style="border-radius:0"><img src="${thumb(v.id,360)}" alt="" loading="lazy" onerror="this.remove()"/></span>
+    // Pull ALL video files (submissions folder + subfolders + inspiration), deduplicated, newest first
+    const allVids = [...new Map(S.files.filter(f=>f.isVideo).map(f=>[f.id,f])).values()]
+      .sort((a,b)=>b.modified.localeCompare(a.modified));
+    const shown = allVids.slice(0,10);
+    if(!shown.length){ el.innerHTML=""; $("vidHelp").textContent="No videos in the Drive folder yet. Drop one in and it shows up here."; return; }
+    if(S.video && !shown.some(v=>v.id===S.video)) S.video=null;
+    $("vidHelp").textContent = allVids.length > 10 ? `Latest 10 of ${allVids.length} videos — use Drive folder button for more.` : "Videos you drop in the Drive folder show up here.";
+    el.innerHTML=shown.map(v=>`<button class="pick" data-id="${v.id}" aria-pressed="${v.id===S.video}"><span class="th" style="border-radius:0"><img src="${thumb(v.id,360)}" alt="" loading="lazy" onerror="this.remove()"/></span>
       <span class="tick">${IC.check}</span><span class="cap">${esc(noExt(v.name))}<small>added ${ago(v.modified)}</small></span></button>`).join("");
-    el.querySelectorAll(".pick").forEach(b=>b.onclick=()=>{ S.video = S.video===b.dataset.id ? null : b.dataset.id; S.dupOk=false; S.refs.delete(S.video); clearLocal(); renderVidPicks(); renderRefs(); renderDup(); renderStage(); checkSend(); });
+    el.querySelectorAll(".pick").forEach(b=>b.onclick=()=>{ const prev=S.video; S.video = prev===b.dataset.id ? null : b.dataset.id; S.dupOk=false; if(prev) S.refs.delete(prev); clearLocal(); renderVidPicks(); renderRefs(); renderDup(); renderStage(); checkSend(); });
+    // Scroll arrows
+    const L=$("vArrL"), R=$("vArrR");
+    if(L && R){
+      const upd=()=>{ L.hidden=el.scrollLeft<4; R.hidden=el.scrollLeft+el.clientWidth>=el.scrollWidth-4; };
+      upd(); el.onscroll=upd;
+      L.onclick=()=>el.scrollBy({left:-172,behavior:"smooth"});
+      R.onclick=()=>el.scrollBy({left:172,behavior:"smooth"});
+    }
   }
   function dupFor(){ if(S.mode!=="new" || !S.video) return null; return S.queue.find(r=>r.video_id===S.video && isOpen(r)) || null; }
   function renderDup(){
@@ -468,10 +501,14 @@
     renderRefNotes();
   }
   function renderPeek(){ const el=$("peek"), f=S.peek && S.byId[S.peek]; el.hidden=!f; if(!f){ el.innerHTML=""; return; }
-    el.innerHTML = (f.isVideo ? `<iframe class="player" style="max-width:640px" src="${preview(f.id)}" allow="autoplay; fullscreen" allowfullscreen title="${esc(f.name)}"></iframe>` : `<img src="${thumb(f.id,1200)}" alt="${esc(f.name)}" style="max-width:100%;max-height:60vh;border-radius:8px;display:block"/>`)
+    el.innerHTML = (f.isVideo ?
+      `<a class="player" href="${esc(f.url)}" target="_blank" rel="noopener" style="max-width:640px">
+        <img src="${thumb(f.id,960)}" alt="" style="position:absolute;inset:0;width:100%;height:100%;object-fit:cover;opacity:.55" loading="lazy"/>
+        <span style="position:relative;z-index:1;background:rgba(255,255,255,.93);color:#14171F;border-radius:8px;padding:12px 20px;font-weight:700;font-size:14px;display:inline-flex;align-items:center;gap:7px">${IC.play}Watch in Drive</span>
+      </a>`
+      : `<img src="${thumb(f.id,1200)}" alt="${esc(f.name)}" style="max-width:100%;max-height:60vh;border-radius:8px;display:block"/>`)
       + `<div style="display:flex;gap:8px;margin-top:8px;flex-wrap:wrap"><button id="peekUse" class="pri">${S.refs.has(f.id)?"Added as a reference":"Use as a reference"}</button><button id="peekClose">Close preview</button></div>`;
-    $("peekUse").disabled=S.refs.has(f.id); $("peekUse").onclick=()=>{ S.refs.set(f.id,{at:"",text:""}); renderRefs(); renderPeek(); }; $("peekClose").onclick=()=>{ S.peek=null; renderPeek(); };
-    el.scrollIntoView({block:"nearest"}); }
+    $("peekUse").disabled=S.refs.has(f.id); $("peekUse").onclick=()=>{ S.refs.set(f.id,{at:"",text:""}); renderRefs(); renderPeek(); }; $("peekClose").onclick=()=>{ S.peek=null; renderPeek(); }; }
   function renderRefNotes(){ const el=$("refNotes"); el.hidden=!S.refs.size;
     el.innerHTML=[...S.refs].map(([id,n])=>{ const f=S.byId[id]; if(!f) return ""; return `<div class="refnote" data-id="${id}"><div><span class="th"><img src="${thumb(id,320)}" alt="" loading="lazy" onerror="this.remove()"/></span><div class="rn">${esc(noExt(f.name))}</div></div>
         ${f.isVideo?`<input type="text" inputmode="numeric" data-k="at" value="${esc(n.at)}" placeholder="1:12" aria-label="Moment in ${esc(f.name)}"/>`:`<span></span>`}
@@ -518,10 +555,17 @@
     let found=false;
     for(const wait of [1500,3000,5000]){ await new Promise(r=>setTimeout(r,wait)); await loadQueue();
       if(S.queue.some(q=>q.video_id===body.video_id && String(q.notes).indexOf(body.notes)===0 && Date.now()-new Date(q.created)<300000)){ found=true; break; } }
-    btn.textContent="Send request";
-    if(found){ toast("Request received. You'll get an email when the edit is ready.",5000); $("brief").value=""; S.rows=[]; S.refs.clear(); S.dupOk=false; S.video=null; S.mode="new"; S.target=null; clearLocal();
-      renderMode(); renderRows(); renderVidPicks(); renderRefs(); window.scrollTo({top:0}); }
-    else { checkSend(); toast("Sent, but it hasn't shown up in the list yet. Check Your videos before sending again.",7000); }
+    if(found){
+      btn.textContent="✓ Sent"; btn.style.background="#0B6B3A"; btn.style.borderColor="#0B6B3A";
+      setTimeout(()=>{ btn.textContent="Send request"; btn.style.background=""; btn.style.borderColor=""; checkSend(); }, 2200);
+      toast("Request queued — you'll see it below and get an email shortly.",5000);
+      $("brief").value=""; S.rows=[]; S.refs.clear(); S.dupOk=false; S.video=null; S.mode="new"; S.target=null; clearLocal();
+      renderMode(); renderRows(); renderVidPicks(); renderRefs();
+      setTimeout(()=>$("videos").scrollIntoView({behavior:"smooth",block:"start"}), 120);
+    } else {
+      btn.textContent="Send request"; checkSend();
+      toast("Sent, but it hasn't shown up in the list yet. Check Your videos before sending again.",7000);
+    }
   };
 
   renderMode(); renderRows(); renderBriefs();
