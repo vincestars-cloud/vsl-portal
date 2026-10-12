@@ -202,6 +202,15 @@ def auto():
     The creative edit still needs a Claude session — this just preps + notifies."""
     _lk = _lock()
     nr = [r for r in new_requests() if r.get("video_id")]   # real edits only (skip empty test rows)
+    # Standby machine (VSL_STANDBY_MIN=15 in its LaunchAgent): only take a request the main Mac has left unclaimed that long.
+    wait_min = float(os.environ.get("VSL_STANDBY_MIN", "0") or 0)
+    if wait_min:
+        import datetime as _dt
+        now = _dt.datetime.now(_dt.timezone.utc)
+        def _age(r):
+            try: return (now - _dt.datetime.fromisoformat(str(r.get("created")).replace("Z", "+00:00"))).total_seconds() / 60
+            except Exception: return 0
+        nr = [r for r in nr if _age(r) >= wait_min]
     if not nr:
         print("auto: nothing new"); return
     print(f"auto: staging {len(nr)} request(s)")
