@@ -319,25 +319,28 @@ var F_ = "font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Helveti
 
 function chip_(text, kind) {
   var c = { blue: [C_.blueT, C_.blue], green: [C_.greenT, C_.green], amber: [C_.amberT, C_.amber], grey: ['#EEF0F3', C_.soft] }[kind || 'grey'];
-  return '<span style="display:inline-block;background:' + c[0] + ';color:' + c[1] + ';font-size:13px;font-weight:700;padding:4px 11px;border-radius:99px;' + F_ + '">' + esc_(text) + '</span>';
+  // table cell with bgcolor: survives mail clients that drop CSS "background"
+  return '<table role="presentation" cellpadding="0" cellspacing="0" style="display:inline-table;"><tr><td bgcolor="' + c[0] + '" style="background-color:' + c[0] + ';border-radius:99px;padding:4px 12px;font-size:13px;font-weight:700;color:' + c[1] + ';' + F_ + '">' + esc_(text) + '</td></tr></table>';
 }
 function button_(url, label, primary) {
-  return '<a href="' + esc_(url) + '" style="display:inline-block;margin:0 10px 10px 0;padding:13px 24px;border-radius:9px;font-size:16px;font-weight:700;text-decoration:none;' + F_ +
-    (primary ? 'background:' + C_.blue + ';color:#ffffff;' : 'background:#ffffff;color:' + C_.ink + ';border:1px solid #C9D0D9;') + '">' + esc_(label) + '</a>';
+  var bg = primary ? C_.blue : '#FFFFFF', fg = primary ? '#FFFFFF' : C_.ink, bd = primary ? C_.blue : '#C9D0D9';
+  return '<table role="presentation" cellpadding="0" cellspacing="0" style="display:inline-table;margin:0 10px 10px 0;"><tr><td bgcolor="' + bg + '" style="background-color:' + bg + ';border:1px solid ' + bd + ';border-radius:9px;">' +
+    '<a href="' + esc_(url) + '" style="display:inline-block;padding:13px 24px;font-size:16px;font-weight:700;text-decoration:none;color:' + fg + ';' + F_ + '"><font color="' + fg + '">' + esc_(label) + '</font></a></td></tr></table>';
 }
 function section_(title, inner) {
   return '<tr><td style="padding:22px 32px 0 32px;"><div style="font-size:13px;font-weight:700;letter-spacing:.04em;text-transform:uppercase;color:' + C_.soft + ';margin-bottom:10px;' + F_ + '">' + esc_(title) + '</div>' + inner + '</td></tr>';
 }
 function shell_(o) {
-  // o: heading, chip(html), sub, body(html rows), buttons(html), foot
-  return '<!doctype html><html><body style="margin:0;padding:0;background:' + C_.bg + ';">' +
-    '<table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="background:' + C_.bg + ';"><tr><td align="center" style="padding:28px 12px;">' +
-    '<table role="presentation" width="600" cellpadding="0" cellspacing="0" style="width:100%;max-width:600px;background:' + C_.card + ';border:1px solid ' + C_.rule + ';border-radius:14px;">' +
+  // o: heading, chip(html), sub, body(html rows), buttons(html), links(html), foot
+  return '<!doctype html><html><body bgcolor="' + C_.bg + '" style="margin:0;padding:0;background-color:' + C_.bg + ';">' +
+    '<table role="presentation" width="100%" cellpadding="0" cellspacing="0" bgcolor="' + C_.bg + '" style="background-color:' + C_.bg + ';"><tr><td align="center" style="padding:28px 12px;">' +
+    '<table role="presentation" width="600" cellpadding="0" cellspacing="0" bgcolor="#FFFFFF" style="width:100%;max-width:600px;background-color:#FFFFFF;border:1px solid ' + C_.rule + ';border-radius:14px;">' +
     '<tr><td style="padding:30px 32px 6px 32px;">' + (o.chip || '') +
-    '<div style="font-size:26px;line-height:1.25;font-weight:750;color:' + C_.ink + ';margin:12px 0 4px 0;' + F_ + '">' + esc_(o.heading) + '</div>' +
+    '<div style="font-size:26px;line-height:1.25;font-weight:bold;color:' + C_.ink + ';margin:12px 0 4px 0;' + F_ + '">' + esc_(o.heading) + '</div>' +
     (o.sub ? '<div style="font-size:16px;line-height:1.5;color:' + C_.soft + ';' + F_ + '">' + o.sub + '</div>' : '') + '</td></tr>' +
     (o.body || '') +
-    (o.buttons ? '<tr><td style="padding:26px 32px 6px 32px;">' + o.buttons + '</td></tr>' : '') +
+    (o.buttons ? '<tr><td style="padding:26px 32px 4px 32px;">' + o.buttons + '</td></tr>' : '') +
+    (o.links ? '<tr><td style="padding:2px 32px 0 32px;font-size:13px;line-height:1.6;color:' + C_.soft + ';' + F_ + '">' + o.links + '</td></tr>' : '') +
     '<tr><td style="padding:18px 32px 28px 32px;font-size:13px;line-height:1.5;color:' + C_.soft + ';border-top:1px solid ' + C_.rule + ';' + F_ + '">' + (o.foot || 'Edit requests') + '</td></tr>' +
     '</table></td></tr></table></body></html>';
 }
@@ -384,6 +387,7 @@ function requestMail_(row, forWho) {
     chip: chip_(forWho === 'martin' ? 'Received' : 'New request', forWho === 'martin' ? 'green' : 'amber'), heading: heading, sub: sub,
     body: meta + changesHtml_(p, att) + briefHtml_(p, p.changes.length ? 'Overall direction' : 'The brief') + refsHtml_(p, att),
     buttons: button_(PORTAL_URL, 'Open the portal', true),
+    links: 'Portal: <a href="' + PORTAL_URL + '" style="color:' + C_.blue + ';">' + PORTAL_URL + '</a>',
     foot: 'Every request, with its attachments, is kept under <b>Request history</b> in the portal.'
   });
   var text = heading + '\n' + name + '\n\n' + (p.changes.map(function (c) { return c.n + '. [' + timeLabel_(c.time) + '] ' + c.title; }).join('\n') || cleanBrief_(p.direction, 600)) + '\n\n' + PORTAL_URL;
@@ -397,6 +401,7 @@ function deliveredMail_(row) {
     chip: chip_('Ready for review', 'blue'), heading: noExt_(name), sub: 'Your edit is finished. Watch it, then approve it or ask for changes.',
     body: asked + section_('What to do next', '<div style="font-size:15px;line-height:1.6;color:#2B323D;' + F_ + '">Open the portal, press <b>Watch</b>, and use <b>Approve</b> or <b>Request changes</b>. You can add as many timed notes and screenshots as you like in one request.</div>'),
     buttons: button_(row.result_url, 'Watch the edit', true) + button_(PORTAL_URL, 'Open the portal', false),
+    links: 'Video: <a href="' + esc_(row.result_url) + '" style="color:' + C_.blue + ';">' + esc_(row.result_url) + '</a><br>Portal: <a href="' + PORTAL_URL + '" style="color:' + C_.blue + ';">' + PORTAL_URL + '</a>',
     foot: 'File: ' + esc_(name)
   });
   return { subject: 'Ready for review: ' + noExt_(name), html: html, text: 'Your edit is ready for review: ' + row.result_url + '\n\nPortal: ' + PORTAL_URL };
