@@ -107,11 +107,21 @@ def ingest(r):
         else:
             update(r["id"], "new")
         raise
+    # Same source video requested before? Point the editor at that work so it revises instead of starting over.
+    earlier = [x for x in queue() if x.get("id") != r["id"] and x.get("video_id") == r.get("video_id") and x.get("result_name")
+               and os.path.isdir(os.path.join(INBOX, x["id"]))]
+    hint = ""
+    if earlier:
+        e = earlier[0]
+        hint = (f"\n## Earlier edit of this same video\nRequest {e['id']} was delivered as {e.get('result_name')}. Its folder "
+                f"{os.path.join(INBOX, e['id'])} holds the transcript, the builder and the raw render. Start from that builder and apply "
+                f"this brief to it (for example a new palette); do not rebuild from scratch. If that folder has ARCHIVED.md, run: "
+                f"python3 {os.path.join(os.path.dirname(os.path.abspath(__file__)), 'archive.py')} restore {e['id']}\n")
     open(os.path.join(d, "BRIEF.md"), "w").write(
         f"# Edit request {r['id']}\n\n"
         f"- Video:  {r.get('video_name')}\n- Change: {r.get('change_type')}\n"
         f"- Notes:  {r.get('notes')}\n- Inspiration: {r.get('inspiration_names') or '(none)'}\n\n"
-        f"Files in: {d}\nWhen finished:  python3 {os.path.abspath(__file__)} done {r['id']} <result.mp4>\n")
+        f"Files in: {d}\nWhen finished:  python3 {os.path.abspath(__file__)} done {r['id']} <result.mp4>\n" + hint)
     print(f"  ✓ staged -> {d}")
     return d
 
@@ -255,7 +265,22 @@ def auto():
                     "You'll get a second email with the review link when it is finished.", "",
                     "Portal: https://edits.vincestars.com/", "", "- VSL Edit Portal"])
 
+def _free_name(path):
+    """Never overwrite an earlier delivery: if Completions already holds a different file with this name, move to the next _vN."""
+    import re, shutil
+    name = os.path.basename(path)
+    try: have = {f["name"]: f.get("size") for f in _get("completions").get("files", [])}
+    except Exception: return path
+    if name not in have or have[name] == os.path.getsize(path): return path
+    stem, ext = os.path.splitext(name)
+    m = re.search(r"^(.*_v)(\d+)$", stem); base, n = (m.group(1), int(m.group(2))) if m else (stem + "_v", 1)
+    while f"{base}{n}{ext}" in have: n += 1
+    new = os.path.join(os.path.dirname(path), f"{base}{n}{ext}")
+    shutil.copy2(path, new); print(f"  name taken in Completions: delivering as {os.path.basename(new)}")
+    return new
+
 def done(rid, path, send_email=True):
+    path = _free_name(path)
     name = os.path.basename(path)
     # --timeout 60s: without it a stalled Drive connection hung the upload for 10+ min, twice (2026-10-03)
     subprocess.run(["rclone", "copy", path, REMOTE, "--drive-root-folder-id", DONE_FOLDER_ID,
