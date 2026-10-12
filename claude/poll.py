@@ -85,6 +85,12 @@ def ingest(r):
     attempts = int(open(att_file).read() or 0) + 1 if os.path.exists(att_file) else 1
     open(att_file, "w").write(str(attempts))
     try:
+        # A change request names the earlier request it builds on. If that one was archived to Drive, bring it back first.
+        import re as _re
+        for prev in set(_re.findall(r"\(request ([0-9a-f-]{36})\)", r.get("notes") or "")):
+            if os.path.exists(os.path.join(INBOX, prev, "ARCHIVED.md")):
+                print(f"  ↺ restoring archived edit {prev[:8]}")
+                subprocess.run([sys.executable, os.path.join(os.path.dirname(os.path.abspath(__file__)), "archive.py"), "restore", prev], check=True)
         if r.get("video_id"):
             print(f"  ↓ video: {r.get('video_name')}"); dl(r["video_id"], d)
         insp_ids = [x for x in (r.get("inspiration_ids") or "").split(",") if x]
