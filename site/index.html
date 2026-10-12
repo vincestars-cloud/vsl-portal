@@ -126,6 +126,24 @@
   .refnote{ display:grid; grid-template-columns:132px 96px 1fr 34px; gap:12px; align-items:start; padding:12px; border-top:1px solid var(--rule2); }
   .refnote:first-child{ border-top:none; }
   .refnote .rn{ font-size:13px; font-weight:600; overflow-wrap:anywhere; margin-top:4px; }
+  /* ---- request history ---- */
+  .hist{ border-top:1px solid var(--rule2); }
+  .hist:first-child{ border-top:none; }
+  .hist > summary{ list-style:none; cursor:pointer; display:grid; grid-template-columns:132px minmax(0,1fr) auto; gap:12px; align-items:center; padding:13px 16px; font-size:14px; }
+  .hist > summary::-webkit-details-marker{ display:none; }
+  .hist > summary:hover{ background:#FAFBFC; }
+  .hist .hd{ color:var(--soft); font-variant-numeric:tabular-nums; }
+  .hist .hv{ font-weight:650; overflow-wrap:anywhere; }
+  .hist .hv small{ display:block; font-weight:500; color:var(--soft); font-size:13px; }
+  .hbody{ padding:2px 16px 18px 16px; display:grid; gap:14px; max-width:860px; }
+  .hbody h3{ margin:0 0 4px; font-size:13px; color:var(--soft); font-weight:650; }
+  .hbody .txt{ white-space:pre-wrap; overflow-wrap:anywhere; font-size:14px; line-height:1.55; }
+  .atts{ display:flex; flex-wrap:wrap; gap:10px; }
+  .att{ width:150px; text-decoration:none; color:var(--ink); font-size:12px; }
+  .att .th{ border:1px solid var(--rule); }
+  .att span.n{ display:block; margin-top:4px; overflow-wrap:anywhere; color:var(--soft); }
+  .mark.dup{ background:#EEF0F3; color:var(--soft); }
+  @media (max-width:620px){ .hist > summary{ grid-template-columns:minmax(0,1fr) auto; } .hist .hd{ grid-column:1 / -1; } }
   .peek{ margin:10px 0 0; }
   details.refs > summary{ cursor:pointer; font-size:14px; font-weight:650; color:var(--act); padding:4px 0; }
   details.refs[open] > summary{ color:var(--ink); margin-bottom:10px; }
@@ -240,6 +258,10 @@
     <div class="shead"><h2>Your videos</h2></div>
     <div class="sheet" id="videos"><div class="empty">Loading.</div></div>
   </section>
+  <section>
+    <div class="shead"><h2>Request history</h2></div>
+    <div class="sheet" id="history"><div class="empty">Loading.</div></div>
+  </section>
 
 </div>
 <input type="file" id="shotFile" accept="image/*" hidden/>
@@ -284,7 +306,7 @@
     }catch(e){ setSync(false,"Can't reach Drive. Retrying."); }
   }
   async function loadDone(){ try{ const d=await get("completions"); S.completions=d.files||[]; S.loaded.done=true; renderVideos(); }catch(e){} }
-  async function loadQueue(){ try{ const d=await get("queue"); S.queue=d.requests||[]; S.loaded.queue=true; renderVideos(); renderBriefs(); renderDup(); }catch(e){} }
+  async function loadQueue(){ try{ const d=await get("queue"); S.queue=d.requests||[]; S.loaded.queue=true; renderVideos(); renderHistory(); renderBriefs(); renderDup(); }catch(e){} }
 
   const isOpen = r => r.status==="new" || r.status==="editing";
   const isMarker = r => !r.video_id && r.change_type==="Approved";
@@ -316,6 +338,28 @@
   }
 
   // ---------- your videos ----------
+  // ---------- request history: what exactly was asked, by whom, with its attachments ----------
+  function whenFmt(iso){ const d=new Date(iso); return d.toLocaleDateString([],{month:"short",day:"numeric"})+", "+d.toLocaleTimeString([],{hour:"numeric",minute:"2-digit"}); }
+  function parseNotes(n){ n=String(n||""); let by=""; const m=n.match(/\n*Sent from the portal by (\S+) \[[0-9a-f]+\]\s*$/); if(m){ by=m[1]; n=n.slice(0,m.index); } return {by,text:n.trim()}; }
+  function renderHistory(){
+    const el=$("history"); if(!S.loaded.queue) return;
+    const rows=S.queue.filter(r=>r.video_id && r.change_type!=="Test");
+    if(!rows.length){ el.innerHTML='<div class="empty">No requests yet.</div>'; return; }
+    const lbl={ new:["Received","edit"], editing:["Being edited","edit"], done:["Delivered","ready"], approved:["Approved","appr"], failed:["Failed","fail"], duplicate:["Duplicate","dup"] };
+    const open=S.histOpen||new Set();
+    el.innerHTML=rows.map(r=>{ const {by,text}=parseNotes(r.notes), st=lbl[r.status]||[r.status,"dup"];
+      const ids=String(r.inspiration_ids||"").split(",").filter(Boolean), names=String(r.inspiration_names||"").split(" | ");
+      const atts=ids.map((id,i)=>{ const f=S.byId[id], nm=(f&&f.name)||names[i]||"Attachment", vid=(f&&f.isVideo)||/\.(mp4|mov|m4v|webm)$/i.test(nm);
+        return `<a class="att" href="https://drive.google.com/file/d/${encodeURIComponent(id)}/view" target="_blank" rel="noopener"><span class="th"><img src="${thumb(id,320)}" alt="" loading="lazy" onerror="this.remove()"/></span><span class="n">${esc(noExt(nm))}${vid?" (video)":""}</span></a>`; }).join("");
+      const out = r.result_name ? `<div><h3>Delivered</h3><a class="btn" href="${esc(r.result_url||"#")}" target="_blank" rel="noopener">${IC.play}${esc(r.result_name)}</a></div>` : "";
+      return `<details class="hist" data-id="${esc(r.id)}"${open.has(r.id)?" open":""}><summary><span class="hd">${whenFmt(r.created)}</span>
+          <span class="hv">${esc(noExt(r.video_name))}<small>${esc(String(r.change_type).replace(/^\S*\s?New build/,"New build"))}${by?" · "+esc(by.split("@")[0]):""}</small></span>
+          <span class="mark ${st[1]}">${st[0]}</span></summary>
+        <div class="hbody"><div><h3>What was asked</h3><div class="txt">${esc(text||"(no notes)")}</div></div>
+        ${atts?`<div><h3>Attachments (${ids.length})</h3><div class="atts">${atts}</div></div>`:""}${out}</div></details>`; }).join("");
+    el.querySelectorAll("details.hist").forEach(d=>d.ontoggle=()=>{ S.histOpen=S.histOpen||new Set(); d.open?S.histOpen.add(d.dataset.id):S.histOpen.delete(d.dataset.id); });
+  }
+
   function renderVideos(){
     const el=$("videos"); if(!(S.loaded.done && S.loaded.queue)) return;
     const gs=groups(); if(!gs.length){ el.innerHTML='<div class="empty">Nothing here yet. Send your first edit below.</div>'; return; }
