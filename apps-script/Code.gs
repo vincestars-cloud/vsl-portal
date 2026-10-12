@@ -1,5 +1,5 @@
 /**
- * VSL Edit Portal — Google Apps Script backend.
+ * VSL Edit Portal \u2014 Google Apps Script backend.
  * No Supabase, no external DB. Uses two Drive folders + one private Sheet, all in YOUR account.
  *
  * ONE-TIME SETUP:
@@ -57,7 +57,7 @@ function setup() {
   return out;
 }
 
-// ===== 24/7 email notifier — runs on Google's servers, works even if your Mac sleeps =====
+// ===== 24/7 email notifier \u2014 runs on Google's servers, works even if your Mac sleeps =====
 const NOTIFY_EMAIL = 'starsvince@gmail.com';   // <- change to your preferred address
 const NOTIFY_CC    = 'martin@narrowgatefirm.com';   // requester gets the same confirmation
 
@@ -67,7 +67,7 @@ function installNotifier() {
     if (t.getHandlerFunction() === 'checkAndNotify') ScriptApp.deleteTrigger(t);
   });
   ScriptApp.newTrigger('checkAndNotify').timeBased().everyMinutes(5).create();
-  Logger.log('Notifier installed — emails ' + NOTIFY_EMAIL + ' on new requests.');
+  Logger.log('Notifier installed \u2014 emails ' + NOTIFY_EMAIL + ' on new requests.');
   return 'ok';
 }
 
@@ -99,7 +99,7 @@ function sendMagicLink_(b) {
   const link  = String(b.link || '');
   if (LOGIN_ALLOWED.indexOf(email) === -1) return json_({ ok: true });            // silent: no account enumeration
   if (!LOGIN_LINK_RE.test(link))           return json_({ ok: false, error: 'bad link' });
-  MailApp.sendEmail(email, 'Your sign-in link — Edit requests',
+  MailApp.sendEmail(email, 'Your sign-in link \u2014 Edit requests',
     'Click to sign in (the link expires in 15 minutes):\n\n' + link +
     '\n\nIf you did not request this, you can ignore this email.',
     { name: 'Edit Requests', htmlBody:
@@ -177,7 +177,7 @@ function collectInto_(folder, libName, depth, seen, res) {
 
 // Inspiration = files in (1) any subfolder of Submissions, and (2) any folder named
 // *inspiration* / *assets* anywhere under the parent. Found by NAME, so it works wherever
-// you move it. Fully dynamic — no hardcoded inspiration IDs, add files anytime.
+// you move it. Fully dynamic \u2014 no hardcoded inspiration IDs, add files anytime.
 function inspirationFiles_() {
   const seen = {}, res = [];
   const sub = DriveApp.getFolderById(PROPS.getProperty('SUBMIT_FOLDER_ID'));
@@ -247,7 +247,7 @@ function updateRow_(id, status, resultUrl, resultName) {
   return { ok: false, error: 'id not found' };
 }
 
-// ===== EMAIL:START — clean HTML emails for the edit portal (requests, deliveries, status notes) =====
+// ===== EMAIL:START \u2014 clean HTML emails for the edit portal (requests, deliveries, status notes) =====
 // Recipients are fixed here, never taken from the caller, so the public endpoint cannot be used to mail anyone else.
 const MAIL_VINCE  = 'starsvince@gmail.com';
 const MAIL_MARTIN = 'martin@narrowgatefirm.com';
@@ -298,11 +298,11 @@ function parseChanges_(txt) {
 function timeLabel_(t) {
   t = String(t || '').trim();
   if (!t || /no time/i.test(t)) return 'Whole video';
-  return t.replace(/\s+to\s+/i, ' – ');
+  return t.replace(/\s+to\s+/i, ' \u2013 ');
 }
 function cleanBrief_(s, max) {
   s = String(s || '').replace(/^#{1,6}\s*/mg, '').replace(/\*\*(.+?)\*\*/g, '$1').replace(/\*(.+?)\*/g, '$1').replace(/\n{3,}/g, '\n\n').trim();
-  return s.length > max ? s.slice(0, max).replace(/\s+\S*$/, '') + '…' : s;
+  return s.length > max ? s.slice(0, max).replace(/\s+\S*$/, '') + '\u2026' : s;
 }
 function attachMap_(row) {
   var ids = String(row.inspiration_ids || '').split(',').filter(String), names = String(row.inspiration_names || '').split(' | ');
