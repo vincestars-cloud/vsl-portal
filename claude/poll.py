@@ -38,7 +38,7 @@ def _post(payload):
 def apps_notify(kind, rid, note=""):
     """Ask the Apps Script backend to send the HTML email for this row (recipients and wording live there)."""
     try:
-        out = subprocess.run(["curl", "-sL", "-X", "POST", "-H", "Content-Type: text/plain", "--data",
+        out = subprocess.run(["curl", "-sL", "-H", "Content-Type: text/plain", "--data",   # no -X POST: curl must follow the 302 with a GET
                               json.dumps({"action": "notify", "kind": kind, "id": rid, "note": note[:700]}), API],
                              capture_output=True, text=True, timeout=60).stdout
         return bool(json.loads(out).get("ok"))
@@ -262,7 +262,7 @@ if __name__ == "__main__":
     elif a[0] == "auto": auto()
     elif a[0] == "notify": notify()
     elif a[0] == "done" and len(a) > 2: done(a[1], a[2], "--no-email" not in a)
-    elif a[0] == "notify" and len(a) > 2:
+    elif a[0] == "mail" and len(a) > 2:
         if not apps_notify(a[1], a[2], " ".join(a[3:])):   # backend without the HTML code yet: plain mail to Vince
             _send_mail(NOTIFY_CC, None, f"VSL Edit Portal: {a[1]} ({a[2][:8]})", [" ".join(a[3:]) or a[1]])
     elif a[0] == "email" and len(a) > 2: notify_email(a[1], a[2])
