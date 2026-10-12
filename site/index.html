@@ -276,7 +276,9 @@
   const $ = id => document.getElementById(id);
   const esc = s => String(s == null ? "" : s).replace(/[&<>"']/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
   const ago = iso => { const s=(Date.now()-new Date(iso))/1000; if(s<90)return"just now"; if(s<3600)return Math.round(s/60)+" min ago"; if(s<86400)return Math.round(s/3600)+" hr ago"; const d=Math.round(s/86400); return d+(d===1?" day ago":" days ago"); };
-  const thumb = (id,w) => `https://drive.google.com/thumbnail?id=${encodeURIComponent(id)}&sz=w${w||480}`;
+  const thumb = (id,w) => `/thumb?id=${encodeURIComponent(id)}&w=${w||480}`;
+  // a new upload has no thumbnail for a minute or two: try once more, then leave the plain tile
+  function thumbErr(img){ if(img.dataset.r){ img.remove(); return; } img.dataset.r="1"; const u=img.src; img.removeAttribute("src"); setTimeout(()=>{ if(img.isConnected) img.src=u+"&r=1"; },6000); }
   const preview = id => `https://drive.google.com/file/d/${encodeURIComponent(id)}/preview`;
   const fmtT = s => { s=Math.max(0,Math.round(s)); return Math.floor(s/60)+":"+String(s%60).padStart(2,"0"); };
   const noExt = n => String(n||"").replace(/\.[a-z0-9]{2,4}$/i,"").trim();
@@ -296,17 +298,31 @@
   async function post(body){ const r=await fetch(API,{method:"POST",headers:{"Content-Type":"text/plain;charset=utf-8"},body:JSON.stringify(body)}); if(r.status===401){ location.href="/login"; throw new Error("signed out"); } const d=await r.json(); if(!d.ok) throw new Error(d.error||"failed"); return d; }
 
   // ---------- data ----------
-  async function loadList(){
-    try{ const d=await get("list");
-      S.videos=d.videos||[]; S.files=[...(d.videos||[]),...(d.inspiration||[])]; S.caps=d.caps||{};
-      S.byId={}; S.files.forEach(f=>{ if(!S.byId[f.id]) S.byId[f.id]=f; });
-      S.loaded.list=true; setSync(true,"Up to date "+new Date().toLocaleTimeString([],{hour:"numeric",minute:"2-digit"}));
-      renderVidPicks(); renderRefs(); renderVideos(); checkSend();
-      $("logHint").textContent = S.caps.upload ? "Paste a screenshot anywhere on this page to add it as a change." : "Paste a screenshot to add it as a change, then type the time it was taken at.";
-    }catch(e){ setSync(false,"Can't reach Drive. Retrying."); }
+  // One request for everything. The page paints at once from the last saved copy, then updates only if something changed
+  // (rebuilding the lists on every poll is what made the thumbnails flicker).
+  let lastData="", loading=null;
+  function applyData(d){
+    const l=d.list||{};
+    S.videos=l.videos||[]; S.files=[...(l.videos||[]),...(l.inspiration||[])]; S.caps=l.caps||{};
+    S.byId={}; S.files.forEach(f=>{ if(!S.byId[f.id]) S.byId[f.id]=f; });
+    S.completions=(d.completions||{}).files||[]; S.queue=(d.queue||{}).requests||[];
+    S.loaded.list=S.loaded.done=S.loaded.queue=true;
+    renderVidPicks(); renderRefs(); renderVideos(); renderHistory(); renderBriefs(); renderDup(); checkSend();
+    $("logHint").textContent = S.caps.upload ? "Paste a screenshot anywhere on this page to add it as a change." : "Paste a screenshot to add it as a change, then type the time it was taken at.";
   }
-  async function loadDone(){ try{ const d=await get("completions"); S.completions=d.files||[]; S.loaded.done=true; renderVideos(); }catch(e){} }
-  async function loadQueue(){ try{ const d=await get("queue"); S.queue=d.requests||[]; S.loaded.queue=true; renderVideos(); renderHistory(); renderBriefs(); renderDup(); }catch(e){} }
+  function loadAll(fresh){
+    if(loading && !fresh) return loading;
+    const run=(async()=>{
+      try{ const r=await fetch(API+"?action=all"+(fresh?"&fresh=1":"")+"&t="+Date.now()); if(r.status===401){ location.href="/login"; return; }
+        const t=await r.text(), d=JSON.parse(t);
+        if(t!==lastData){ lastData=t; applyData(d); try{ localStorage.setItem("vsl.data",t); }catch(e){} }
+        setSync(true,"Up to date "+new Date().toLocaleTimeString([],{hour:"numeric",minute:"2-digit"}));
+      }catch(e){ setSync(false,"Can't reach Drive. Retrying."); }
+    })();
+    loading=run; run.finally(()=>{ if(loading===run) loading=null; });
+    return run;
+  }
+  const loadList=()=>loadAll(false), loadDone=()=>loadAll(true), loadQueue=()=>loadAll(true);   // after a write, ask for a fresh copy
 
   const isOpen = r => r.status==="new" || r.status==="editing";
   const isMarker = r => !r.video_id && r.change_type==="Approved";
@@ -350,7 +366,7 @@
     el.innerHTML=rows.map(r=>{ const {by,text}=parseNotes(r.notes), st=lbl[r.status]||[r.status,"dup"];
       const ids=String(r.inspiration_ids||"").split(",").filter(Boolean), names=String(r.inspiration_names||"").split(" | ");
       const atts=ids.map((id,i)=>{ const f=S.byId[id], nm=(f&&f.name)||names[i]||"Attachment", vid=(f&&f.isVideo)||/\.(mp4|mov|m4v|webm)$/i.test(nm);
-        return `<a class="att" href="https://drive.google.com/file/d/${encodeURIComponent(id)}/view" target="_blank" rel="noopener"><span class="th"><img src="${thumb(id,320)}" alt="" loading="lazy" onerror="this.remove()"/></span><span class="n">${esc(noExt(nm))}${vid?" (video)":""}</span></a>`; }).join("");
+        return `<a class="att" href="https://drive.google.com/file/d/${encodeURIComponent(id)}/view" target="_blank" rel="noopener"><span class="th"><img src="${thumb(id,320)}" alt="" loading="lazy" onerror="thumbErr(this)"/></span><span class="n">${esc(noExt(nm))}${vid?" (video)":""}</span></a>`; }).join("");
       const out = r.result_name ? `<div><h3>Delivered</h3><a class="btn" href="${esc(r.result_url||"#")}" target="_blank" rel="noopener">${IC.play}${esc(r.result_name)}</a></div>` : "";
       return `<details class="hist" data-id="${esc(r.id)}"${open.has(r.id)?" open":""}><summary><span class="hd">${whenFmt(r.created)}</span>
           <span class="hv">${esc(noExt(r.video_name))}<small>${esc(String(r.change_type).replace(/^\S*\s?New build/,"New build"))}${by?" · "+esc(by.split("@")[0]):""}</small></span>
@@ -391,7 +407,7 @@
         </a>
         <div><h3>${esc(cur.name)}</h3>${r&&r.notes?`<div class="asked">${esc(r.notes)}</div>`:`<p class="help" style="margin:0">No notes were saved with this version.</p>`}
         <p style="margin:12px 0 0"><a class="btn" href="${esc(cur.url)}" target="_blank" rel="noopener">Open in Drive</a></p></div></div>`; }
-    return `<div class="vid"><span class="th">${tid?`<img src="${thumb(tid,320)}" alt="" loading="lazy" onerror="this.remove()"/>`:""}</span>
+    return `<div class="vid"><span class="th">${tid?`<img src="${thumb(tid,320)}" alt="" loading="lazy" onerror="thumbErr(this)"/>`:""}</span>
       <div><div class="nm">${esc(g.title)}</div><div class="st">${stt}</div>${vers}</div>${acts}${watch}</div>`;
   }
   function act(a,key,id){
@@ -463,7 +479,7 @@
     if(!shown.length){ el.innerHTML=""; $("vidHelp").textContent="No videos in the Drive folder yet. Drop one in and it shows up here."; return; }
     if(S.video && !shown.some(v=>v.id===S.video)) S.video=null;
     $("vidHelp").textContent = allVids.length > 10 ? `Latest 10 of ${allVids.length} videos — use Drive folder button for more.` : "Videos you drop in the Drive folder show up here.";
-    el.innerHTML=shown.map(v=>`<button class="pick" data-id="${v.id}" aria-pressed="${v.id===S.video}"><span class="th" style="border-radius:0"><img src="${thumb(v.id,360)}" alt="" loading="lazy" onerror="this.remove()"/></span>
+    el.innerHTML=shown.map(v=>`<button class="pick" data-id="${v.id}" aria-pressed="${v.id===S.video}"><span class="th" style="border-radius:0"><img src="${thumb(v.id,360)}" alt="" loading="lazy" onerror="thumbErr(this)"/></span>
       <span class="tick">${IC.check}</span><span class="cap">${esc(noExt(v.name))}<small>added ${ago(v.modified)}</small></span></button>`).join("");
     el.querySelectorAll(".pick").forEach(b=>b.onclick=()=>{ const prev=S.video; S.video = prev===b.dataset.id ? null : b.dataset.id; S.dupOk=false; if(prev) S.refs.delete(prev); clearLocal(); renderVidPicks(); renderRefs(); renderDup(); renderStage(); checkSend(); });
     // Scroll arrows
@@ -536,7 +552,7 @@
     list.sort((a,b)=>(S.refs.has(b.id)-S.refs.has(a.id)));
     const cut = !S.refAll && !q && list.length>REF_LIMIT; const shown = cut ? list.slice(0,Math.max(REF_LIMIT,S.refs.size)) : list;
     $("refMore").hidden=!cut; $("refMore").textContent=`Show all ${list.length}`;
-    $("refPicks").innerHTML = shown.length ? shown.map(f=>`<button class="pick" data-id="${f.id}" aria-pressed="${S.refs.has(f.id)}"><span class="th" style="border-radius:0"><img src="${thumb(f.id,360)}" alt="" loading="lazy" onerror="this.remove()"/></span>
+    $("refPicks").innerHTML = shown.length ? shown.map(f=>`<button class="pick" data-id="${f.id}" aria-pressed="${S.refs.has(f.id)}"><span class="th" style="border-radius:0"><img src="${thumb(f.id,360)}" alt="" loading="lazy" onerror="thumbErr(this)"/></span>
         ${f.isVideo?`<span class="play" data-play="${f.id}">${IC.play}Play</span>`:`<span class="play" data-play="${f.id}">View</span>`}<span class="tick">${IC.check}</span>
         <span class="cap">${esc(noExt(f.name))}<small>${f.isVideo?"Video":"Image"}</small></span></button>`).join("") : `<p class="help">No references match that search.</p>`;
     $("refPicks").querySelectorAll(".pick").forEach(b=>b.onclick=e=>{ const id=b.dataset.id;
@@ -554,7 +570,7 @@
       + `<div style="display:flex;gap:8px;margin-top:8px;flex-wrap:wrap"><button id="peekUse" class="pri">${S.refs.has(f.id)?"Added as a reference":"Use as a reference"}</button><button id="peekClose">Close preview</button></div>`;
     $("peekUse").disabled=S.refs.has(f.id); $("peekUse").onclick=()=>{ S.refs.set(f.id,{at:"",text:""}); renderRefs(); renderPeek(); }; $("peekClose").onclick=()=>{ S.peek=null; renderPeek(); }; }
   function renderRefNotes(){ const el=$("refNotes"); el.hidden=!S.refs.size;
-    el.innerHTML=[...S.refs].map(([id,n])=>{ const f=S.byId[id]; if(!f) return ""; return `<div class="refnote" data-id="${id}"><div><span class="th"><img src="${thumb(id,320)}" alt="" loading="lazy" onerror="this.remove()"/></span><div class="rn">${esc(noExt(f.name))}</div></div>
+    el.innerHTML=[...S.refs].map(([id,n])=>{ const f=S.byId[id]; if(!f) return ""; return `<div class="refnote" data-id="${id}"><div><span class="th"><img src="${thumb(id,320)}" alt="" loading="lazy" onerror="thumbErr(this)"/></span><div class="rn">${esc(noExt(f.name))}</div></div>
         ${f.isVideo?`<input type="text" inputmode="numeric" data-k="at" value="${esc(n.at)}" placeholder="1:12" aria-label="Moment in ${esc(f.name)}"/>`:`<span></span>`}
         <div class="c"><textarea data-k="text" style="min-height:58px" placeholder="${f.isVideo?"What do you like at that moment?":"What should we take from this?"}" aria-label="What you like about ${esc(f.name)}">${esc(n.text)}</textarea></div>
         <button class="del" style="padding:6px;min-height:34px;border-color:transparent;justify-content:center" data-del aria-label="Remove ${esc(f.name)}">${IC.x}</button></div>`; }).join("");
@@ -613,9 +629,10 @@
   };
 
   renderMode(); renderRows(); renderBriefs();
-  loadList(); loadDone(); loadQueue();
-  setInterval(loadList,20000); setInterval(()=>{ loadDone(); loadQueue(); },30000);
-  window.addEventListener("focus",()=>{ loadList(); loadQueue(); });
+  try{ const saved=localStorage.getItem("vsl.data"); if(saved){ lastData=saved; applyData(JSON.parse(saved)); setSync(true,"Refreshing"); } }catch(e){}
+  loadAll(false);
+  setInterval(()=>loadAll(false),30000);
+  window.addEventListener("focus",()=>loadAll(false));
 </script>
 </body>
 </html>

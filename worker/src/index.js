@@ -59,8 +59,28 @@ const sentPage = (email) => html(200, `<h1>Check your email</h1>
 <p class="muted">If <b>${email}</b> is on the access list, a one-time sign-in link is on its way. It expires in 15 minutes.</p>
 <p class="muted"><a href="/login">Use a different email</a></p>`);
 
+// ---- speed: the Apps Script backend takes 3-5 s per call, so answers are kept at the edge.
+// Fresh for 20 s; after that the saved copy is served at once and refreshed in the background.
+const FRESH_S = 20, KEEP_S = 6 * 3600, ACTIONS = ["list", "completions", "queue"];
+const apiKey = (origin, action) => new Request(origin + "/__cache/api/" + action);
+async function cachedApi(env, ctx, origin, action, force) {
+  const cache = caches.default, key = apiKey(origin, action);
+  const load = async () => {
+    const r = await fetch(env.API_URL + "?action=" + action, { redirect: "follow" });
+    const t = await r.text(); JSON.parse(t);                       // an error page must never be cached
+    await cache.put(key, new Response(t, { headers: { "Content-Type": "application/json", "Cache-Control": "public, max-age=" + KEEP_S, "X-At": String(Date.now()) } }));
+    return t;
+  };
+  if (!force) {
+    const hit = await cache.match(key);
+    if (hit) { const age = (Date.now() - (+hit.headers.get("X-At") || 0)) / 1000, t = await hit.text(); if (age > FRESH_S) ctx.waitUntil(load().catch(() => {})); return t; }
+  }
+  return load();
+}
+const jsonOut = t => new Response(t, { headers: { "Content-Type": "application/json", "Cache-Control": "no-store" } });
+
 export default {
-  async fetch(req, env) {
+  async fetch(req, env, ctx) {
     const url = new URL(req.url);
 
     // Request a login link
@@ -94,7 +114,12 @@ export default {
     const email = await who(req, env);
     if (url.pathname === "/api") {
       if (!email) return Response.json({ ok: false, error: "signed out" }, { status: 401 });
-      if (req.method === "GET") { const r = await fetch(env.API_URL + url.search, { redirect: "follow" }); return new Response(await r.text(), { headers: { "Content-Type": "application/json", "Cache-Control": "no-store" } }); }
+      if (req.method === "GET") {
+        const action = url.searchParams.get("action") || "list", force = url.searchParams.get("fresh") === "1";
+        if (action === "all") { const [l, c, q] = await Promise.all(ACTIONS.map(a => cachedApi(env, ctx, url.origin, a, force))); return jsonOut('{"list":' + l + ',"completions":' + c + ',"queue":' + q + '}'); }
+        if (!ACTIONS.includes(action)) return Response.json({ ok: false, error: "unknown action" }, { status: 400 });
+        return jsonOut(await cachedApi(env, ctx, url.origin, action, force));
+      }
       const b = JSON.parse(await req.text());
       if (b.action === "magiclink") return Response.json({ ok: false, error: "nope" }, { status: 400 }); // login mail is server-initiated only, never via the client proxy
       if (b.action !== "update") {   // sign new requests so the Mac can tell portal requests from anything posted straight at the backend
@@ -102,7 +127,22 @@ export default {
         b.notes += (b.notes ? "\n\n" : "") + "Sent from the portal by " + email + " [" + sig + "]";
       }
       const r = await fetch(env.API_URL, { method: "POST", headers: { "Content-Type": "text/plain;charset=utf-8" }, body: JSON.stringify(b), redirect: "follow" });
-      return new Response(await r.text(), { headers: { "Content-Type": "application/json", "Cache-Control": "no-store" } });
+      const out = await r.text();
+      await Promise.all(ACTIONS.map(a => caches.default.delete(apiKey(url.origin, a))));   // a write makes the saved answers stale
+      return jsonOut(out);
+    }
+    // Thumbnails: fetched from Drive once, then served from the edge and the browser for a week (no flicker, no Drive rate limits).
+    if (url.pathname === "/thumb") {
+      if (!email) return new Response(null, { status: 401 });
+      const id = url.searchParams.get("id") || "", w = Math.min(1200, Math.max(160, +url.searchParams.get("w") || 480));
+      if (!/^[\w-]{10,80}$/.test(id)) return new Response(null, { status: 400 });
+      const key = new Request(url.origin + "/__cache/thumb/" + id + "/" + w), hit = await caches.default.match(key);
+      if (hit) return hit;
+      const r = await fetch("https://drive.google.com/thumbnail?id=" + id + "&sz=w" + w, { redirect: "follow" });
+      if (!r.ok || !(r.headers.get("Content-Type") || "").startsWith("image/")) return new Response(null, { status: 404, headers: { "Cache-Control": "no-store" } });
+      const img = new Response(await r.arrayBuffer(), { headers: { "Content-Type": r.headers.get("Content-Type"), "Cache-Control": "public, max-age=604800, immutable" } });
+      ctx.waitUntil(caches.default.put(key, img.clone()));
+      return img;
     }
     if (!email) return Response.redirect(url.origin + "/login", 302);
     return env.ASSETS.fetch(req);
