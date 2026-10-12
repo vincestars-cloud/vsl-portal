@@ -35,6 +35,21 @@ def _post(payload):
                     "--data", json.dumps(payload), API], capture_output=True, text=True, timeout=40)
     return {"ok": True}
 
+def apps_notify(kind, rid, note=""):
+    """Ask the Apps Script backend to send the HTML email for this row (recipients and wording live there)."""
+    try:
+        out = subprocess.run(["curl", "-sL", "-X", "POST", "-H", "Content-Type: text/plain", "--data",
+                              json.dumps({"action": "notify", "kind": kind, "id": rid, "note": note[:700]}), API],
+                             capture_output=True, text=True, timeout=60).stdout
+        return bool(json.loads(out).get("ok"))
+    except Exception:
+        return False
+
+def html_mail():
+    """True once the deployed backend carries the HTML email code (it then also sends the request emails itself)."""
+    try: return bool(_get("list").get("caps", {}).get("htmlmail"))
+    except Exception: return False
+
 def queue():        return _get("queue").get("requests", [])
 def new_requests(): return [r for r in queue() if r.get("status") == "new"]
 def update(rid, status, url=None, name=None):
@@ -201,6 +216,9 @@ def auto():
     if not staged:
         return
     names = ", ".join((r.get("video_name") or "?") for r in staged)
+    if html_mail():   # the backend already emailed Martin ("we got it") and Vince (the full request) when it was submitted
+        subprocess.run(["osascript", "-e", f'display notification "Staged {len(staged)}: {names}" with title "VSL Edit Portal" sound name "Glass"'])
+        return
     subprocess.run(["osascript", "-e",
                     f'display notification "Staged {len(staged)}: {names}" with title "VSL Edit Portal — new request" sound name "Glass"'])
     body = ["Hi Vince,", "",
@@ -222,7 +240,7 @@ def auto():
                     "You'll get a second email with the review link when it is finished.", "",
                     "Portal: https://edits.vincestars.com/", "", "- VSL Edit Portal"])
 
-def done(rid, path):
+def done(rid, path, send_email=True):
     name = os.path.basename(path)
     # --timeout 60s: without it a stalled Drive connection hung the upload for 10+ min, twice (2026-10-03)
     subprocess.run(["rclone", "copy", path, REMOTE, "--drive-root-folder-id", DONE_FOLDER_ID,
@@ -231,7 +249,8 @@ def done(rid, path):
                           capture_output=True, text=True).stdout.strip()
     update(rid, "done", link, name)
     print(f"uploaded {name} -> Completions\n{link}")
-    notify_email(name, link)
+    if send_email and not apps_notify("delivered", rid):
+        notify_email(name, link)   # backend not updated yet: plain-text fallback
 
 if __name__ == "__main__":
     a = sys.argv[1:]
@@ -242,7 +261,10 @@ if __name__ == "__main__":
     elif a[0] == "process": process()
     elif a[0] == "auto": auto()
     elif a[0] == "notify": notify()
-    elif a[0] == "done" and len(a) > 2: done(a[1], a[2])
+    elif a[0] == "done" and len(a) > 2: done(a[1], a[2], "--no-email" not in a)
+    elif a[0] == "notify" and len(a) > 2:
+        if not apps_notify(a[1], a[2], " ".join(a[3:])):   # backend without the HTML code yet: plain mail to Vince
+            _send_mail(NOTIFY_CC, None, f"VSL Edit Portal: {a[1]} ({a[2][:8]})", [" ".join(a[3:]) or a[1]])
     elif a[0] == "email" and len(a) > 2: notify_email(a[1], a[2])
     elif a[0] == "update" and len(a) > 2: update(*a[1:])
     else: print(__doc__)

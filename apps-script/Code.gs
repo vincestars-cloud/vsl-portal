@@ -77,17 +77,7 @@ function checkAndNotify() {
   const rows = sheet_().getDataRange().getValues(); rows.shift();
   const fresh = rows.filter(r => r[8] === 'new' && !seen[r[0]]); // col8=status, col0=id
   if (!fresh.length) return;
-  fresh.forEach(r => {
-    MailApp.sendEmail(NOTIFY_EMAIL,
-      'New VSL edit request: ' + (r[3] || 'video'),
-      'Video: '       + (r[3] || '') +
-      '\nNeeds: '      + (r[6] || '') +
-      '\nInspiration: '+ (r[5] || '(none)') +
-      '\nNotes: '      + (r[7] || '') +
-      '\n\nPortal: https://edits.vincestars.com',
-      { cc: NOTIFY_CC });
-    notified.push(r[0]);
-  });
+  fresh.forEach(r => { try { sendRequestEmails_(rowObj_(r)); } catch (e) {} notified.push(r[0]); });
   PROPS.setProperty('NOTIFIED', JSON.stringify(notified.slice(-300)));
 }
 
@@ -124,6 +114,7 @@ function doPost(e) {
   try {
     const b = JSON.parse(e.postData.contents);
     if (b.action === 'magiclink') return sendMagicLink_(b);
+    if (b.action === 'notify') return handleNotify_(b);
     if (b.action === 'update') return json_(updateRow_(b.id, b.status, b.result_url, b.result_name));
     const sh = sheet_();
     const id = Utilities.getUuid();
@@ -146,23 +137,8 @@ function doPost(e) {
       b.video_name || '', (b.inspiration_names || []).join(', '),
       b.change_type || '', b.notes || '', '', 'new', id
     ]);
-    // Immediate notification — fires as soon as the request is saved.
-    // Also marks the id in NOTIFIED so checkAndNotify() won't send a duplicate.
-    try {
-      const cleanNotes = (b.notes || '').replace(/\n*Sent from the portal by \S+ \[[0-9a-f]+\]\s*$/, '').slice(0, 500);
-      MailApp.sendEmail(
-        NOTIFY_EMAIL,
-        'New VSL edit request: ' + (b.video_name || 'video'),
-        'Video: '    + (b.video_name   || '(unknown)') +
-        '\nNeeds: '  + (b.change_type  || '') +
-        '\nNotes: '  + (cleanNotes     || '(none)') +
-        '\n\nPortal: https://edits.vincestars.com',
-        { cc: NOTIFY_CC }
-      );
-      const notified = JSON.parse(PROPS.getProperty('NOTIFIED') || '[]');
-      notified.push(id);
-      PROPS.setProperty('NOTIFIED', JSON.stringify(notified.slice(-300)));
-    } catch (mailErr) { /* non-fatal — request is saved even if mail fails */ }
+    // Immediate notification (HTML): Martin gets "we got it", Vince gets the full request. Fires even if the Mac is asleep.
+    try { sendRequestEmails_(findRow_(id)); } catch (mailErr) { /* non-fatal: the request is saved even if mail fails */ }
     return json_({ ok: true, id: id });
   } catch (err) { return json_({ ok: false, error: String(err) }); }
 }
@@ -222,7 +198,7 @@ function listSubmissions_() {
   const direct = filesIn_(sub);
   return {
     ok: true,
-    caps: { upload: true },   // tells the portal this backend can save screenshots
+    caps: { upload: true, htmlmail: true },   // tells the portal this backend can save screenshots
     videos: direct.filter(f => f.isVideo),
     inspiration: direct.filter(f => !f.isVideo).concat(inspirationFiles_())
   };
@@ -269,6 +245,200 @@ function updateRow_(id, status, resultUrl, resultName) {
     }
   }
   return { ok: false, error: 'id not found' };
+}
+
+// ===== EMAIL:START — clean HTML emails for the edit portal (requests, deliveries, status notes) =====
+// Recipients are fixed here, never taken from the caller, so the public endpoint cannot be used to mail anyone else.
+const MAIL_VINCE  = 'starsvince@gmail.com';
+const MAIL_MARTIN = 'martin@narrowgatefirm.com';
+const PORTAL_URL  = 'https://edits.vincestars.com';
+
+function esc_(s) { return String(s == null ? '' : s).replace(/[&<>"']/g, function (c) { return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]; }); }
+function thumb_(id, w) { return 'https://drive.google.com/thumbnail?id=' + encodeURIComponent(id) + '&sz=w' + (w || 480); }
+function noExt_(n) { return String(n || '').replace(/\.[a-z0-9]{2,4}$/i, ''); }
+
+// Turn a request's notes (the portal writes ABOUT / CHANGES / REFERENCES / OVERALL DIRECTION blocks) into structure.
+function parseRequest_(row) {
+  var notes = String(row.notes || ''), by = '';
+  var m = notes.match(/\n*Sent from the portal by (\S+) \[[0-9a-f]+\]\s*$/);
+  if (m) { by = m[1]; notes = notes.slice(0, m.index); }
+  notes = notes.replace(/\r/g, '').trim();
+  var out = { by: by, about: '', changes: [], refs: [], direction: '' };
+  var re = /^(ABOUT|CHANGES \(\d+\)|REFERENCES|OVERALL DIRECTION)\n/mg, marks = [], mm;
+  while ((mm = re.exec(notes)) !== null) marks.push({ name: mm[1].split(' ')[0], start: mm.index, body: mm.index + mm[0].length });
+  if (!marks.length) { out.direction = notes; }
+  else {
+    if (marks[0].start > 0) out.direction = notes.slice(0, marks[0].start).trim();
+    marks.forEach(function (k, i) {
+      var txt = notes.slice(k.body, i + 1 < marks.length ? marks[i + 1].start : notes.length).trim();
+      if (k.name === 'ABOUT') out.about = txt;
+      else if (k.name === 'CHANGES') out.changes = parseChanges_(txt);
+      else if (k.name === 'REFERENCES') out.refs = txt.split('\n').map(function (l) { return l.replace(/^- /, '').trim(); }).filter(String);
+      else out.direction = txt;
+    });
+  }
+  return out;
+}
+function parseChanges_(txt) {
+  var items = [], cur = null;
+  txt.split('\n').forEach(function (line) {
+    var h = line.match(/^(\d+)\. \[(.*?)\] ?(.*)$/);
+    if (h) { cur = { n: +h[1], time: h[2], lines: [h[3]], shot: '' }; items.push(cur); return; }
+    if (!cur) return;
+    var s = line.match(/\(screenshot attached: (\S+?)\)/);
+    if (s) { cur.shot = s[1]; return; }
+    if (/^\s*\(he had a screenshot/.test(line)) return;
+    cur.lines.push(line.replace(/^ {1,3}/, ''));
+  });
+  return items.map(function (c) {
+    var lines = c.lines.filter(function (l) { return l.trim() !== ''; });
+    c.title = lines.shift() || ''; c.body = lines; return c;
+  });
+}
+function timeLabel_(t) {
+  t = String(t || '').trim();
+  if (!t || /no time/i.test(t)) return 'Whole video';
+  return t.replace(/\s+to\s+/i, ' – ');
+}
+function cleanBrief_(s, max) {
+  s = String(s || '').replace(/^#{1,6}\s*/mg, '').replace(/\*\*(.+?)\*\*/g, '$1').replace(/\*(.+?)\*/g, '$1').replace(/\n{3,}/g, '\n\n').trim();
+  return s.length > max ? s.slice(0, max).replace(/\s+\S*$/, '') + '…' : s;
+}
+function attachMap_(row) {
+  var ids = String(row.inspiration_ids || '').split(',').filter(String), names = String(row.inspiration_names || '').split(' | ');
+  var shots = {}, refs = [];
+  ids.forEach(function (id, i) {
+    var nm = names[i] || 'Attachment', s = nm.match(/change-(\d+)\.jpg$/i);
+    if (s) shots[+s[1]] = { id: id, name: nm }; else refs.push({ id: id, name: nm });
+  });
+  return { shots: shots, refs: refs };
+}
+
+var C_ = { bg: '#F4F5F7', card: '#FFFFFF', ink: '#14171F', soft: '#5B6472', rule: '#E3E7EC', blue: '#1F4FD8', blueT: '#EEF3FE', green: '#0B6B3A', greenT: '#E3F4EA', amber: '#8A5300', amberT: '#FFF3D6' };
+var F_ = "font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Helvetica,Arial,sans-serif;";
+
+function chip_(text, kind) {
+  var c = { blue: [C_.blueT, C_.blue], green: [C_.greenT, C_.green], amber: [C_.amberT, C_.amber], grey: ['#EEF0F3', C_.soft] }[kind || 'grey'];
+  return '<span style="display:inline-block;background:' + c[0] + ';color:' + c[1] + ';font-size:13px;font-weight:700;padding:4px 11px;border-radius:99px;' + F_ + '">' + esc_(text) + '</span>';
+}
+function button_(url, label, primary) {
+  return '<a href="' + esc_(url) + '" style="display:inline-block;margin:0 10px 10px 0;padding:13px 24px;border-radius:9px;font-size:16px;font-weight:700;text-decoration:none;' + F_ +
+    (primary ? 'background:' + C_.blue + ';color:#ffffff;' : 'background:#ffffff;color:' + C_.ink + ';border:1px solid #C9D0D9;') + '">' + esc_(label) + '</a>';
+}
+function section_(title, inner) {
+  return '<tr><td style="padding:22px 32px 0 32px;"><div style="font-size:13px;font-weight:700;letter-spacing:.04em;text-transform:uppercase;color:' + C_.soft + ';margin-bottom:10px;' + F_ + '">' + esc_(title) + '</div>' + inner + '</td></tr>';
+}
+function shell_(o) {
+  // o: heading, chip(html), sub, body(html rows), buttons(html), foot
+  return '<!doctype html><html><body style="margin:0;padding:0;background:' + C_.bg + ';">' +
+    '<table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="background:' + C_.bg + ';"><tr><td align="center" style="padding:28px 12px;">' +
+    '<table role="presentation" width="600" cellpadding="0" cellspacing="0" style="width:100%;max-width:600px;background:' + C_.card + ';border:1px solid ' + C_.rule + ';border-radius:14px;">' +
+    '<tr><td style="padding:30px 32px 6px 32px;">' + (o.chip || '') +
+    '<div style="font-size:26px;line-height:1.25;font-weight:750;color:' + C_.ink + ';margin:12px 0 4px 0;' + F_ + '">' + esc_(o.heading) + '</div>' +
+    (o.sub ? '<div style="font-size:16px;line-height:1.5;color:' + C_.soft + ';' + F_ + '">' + o.sub + '</div>' : '') + '</td></tr>' +
+    (o.body || '') +
+    (o.buttons ? '<tr><td style="padding:26px 32px 6px 32px;">' + o.buttons + '</td></tr>' : '') +
+    '<tr><td style="padding:18px 32px 28px 32px;font-size:13px;line-height:1.5;color:' + C_.soft + ';border-top:1px solid ' + C_.rule + ';' + F_ + '">' + (o.foot || 'Edit requests') + '</td></tr>' +
+    '</table></td></tr></table></body></html>';
+}
+
+function changesHtml_(p, att) {
+  if (!p.changes.length) return '';
+  var rows = p.changes.map(function (c) {
+    var shot = att.shots[c.n] ? '<div style="margin-top:12px;"><img src="' + thumb_(att.shots[c.n].id, 560) + '" width="260" alt="Screenshot for change ' + c.n + '" style="display:block;width:260px;max-width:100%;border-radius:8px;border:1px solid ' + C_.rule + ';"></div>' : '';
+    var body = c.body.map(function (l) { return '<div style="margin-top:6px;">' + esc_(l.trim()) + '</div>'; }).join('');
+    return '<div style="border:1px solid ' + C_.rule + ';border-radius:10px;padding:16px 18px;margin-bottom:12px;">' +
+      '<div style="margin-bottom:8px;">' + chip_(timeLabel_(c.time), 'blue') + '</div>' +
+      '<div style="font-size:17px;font-weight:700;line-height:1.35;color:' + C_.ink + ';' + F_ + '">' + esc_(c.title) + '</div>' +
+      '<div style="font-size:15px;line-height:1.55;color:#2B323D;' + F_ + '">' + body + '</div>' + shot + '</div>';
+  }).join('');
+  return section_('What was asked (' + p.changes.length + (p.changes.length === 1 ? ' change' : ' changes') + ')', rows);
+}
+function briefHtml_(p, label) {
+  if (!p.direction) return '';
+  return section_(label, '<div style="font-size:15px;line-height:1.6;color:#2B323D;white-space:pre-wrap;' + F_ + '">' + esc_(cleanBrief_(p.direction, 1100)) + '</div>' +
+    (String(p.direction).length > 1100 ? '<div style="margin-top:8px;font-size:13px;color:' + C_.soft + ';' + F_ + '">Shortened here. The full text is in the portal under Request history.</div>' : ''));
+}
+function refsHtml_(p, att) {
+  var parts = '';
+  if (p.refs.length) parts += '<ul style="margin:0 0 12px 0;padding-left:20px;font-size:15px;line-height:1.6;color:#2B323D;' + F_ + '">' + p.refs.map(function (r) { return '<li>' + esc_(r) + '</li>'; }).join('') + '</ul>';
+  if (att.refs.length) parts += '<div>' + att.refs.slice(0, 6).map(function (a) {
+    return '<div style="display:inline-block;width:132px;margin:0 10px 10px 0;vertical-align:top;"><img src="' + thumb_(a.id, 320) + '" width="132" alt="" style="display:block;width:132px;border-radius:8px;border:1px solid ' + C_.rule + ';">' +
+      '<div style="font-size:12px;line-height:1.35;color:' + C_.soft + ';margin-top:4px;' + F_ + '">' + esc_(noExt_(a.name)) + '</div></div>'; }).join('') + '</div>';
+  return parts ? section_('References', parts) : '';
+}
+
+// ---- the emails ----
+function requestMail_(row, forWho) {
+  var p = parseRequest_(row), att = attachMap_(row), isChange = /changes to a delivered/i.test(row.change_type || '');
+  var who = p.by ? p.by.split('@')[0] : '';
+  var name = noExt_(row.video_name);
+  var heading = forWho === 'martin' ? 'We got your request' : (isChange ? 'Changes requested' : 'New edit requested');
+  var sub = forWho === 'martin'
+    ? 'It is queued. You will get another email with a review link when the edit is ready.'
+    : esc_((who ? who.charAt(0).toUpperCase() + who.slice(1) : 'Someone') + ' sent this ' + (isChange ? 'revision' : 'new request') + '. It stages on your Mac within 5 minutes.');
+  var meta = '<tr><td style="padding:18px 32px 0 32px;"><div style="font-size:13px;font-weight:700;letter-spacing:.04em;text-transform:uppercase;color:' + C_.soft + ';' + F_ + '">Video</div>' +
+    '<div style="font-size:18px;font-weight:700;color:' + C_.ink + ';margin-top:4px;' + F_ + '">' + esc_(name) + '</div>' +
+    '<div style="font-size:14px;color:' + C_.soft + ';margin-top:2px;' + F_ + '">' + esc_(String(row.change_type || '').replace(/^\S*\s?New build/, 'New build')) + '</div></td></tr>';
+  var html = shell_({
+    chip: chip_(forWho === 'martin' ? 'Received' : 'New request', forWho === 'martin' ? 'green' : 'amber'), heading: heading, sub: sub,
+    body: meta + changesHtml_(p, att) + briefHtml_(p, p.changes.length ? 'Overall direction' : 'The brief') + refsHtml_(p, att),
+    buttons: button_(PORTAL_URL, 'Open the portal', true),
+    foot: 'Every request, with its attachments, is kept under <b>Request history</b> in the portal.'
+  });
+  var text = heading + '\n' + name + '\n\n' + (p.changes.map(function (c) { return c.n + '. [' + timeLabel_(c.time) + '] ' + c.title; }).join('\n') || cleanBrief_(p.direction, 600)) + '\n\n' + PORTAL_URL;
+  return { subject: (forWho === 'martin' ? 'We got your request: ' : (isChange ? 'Changes requested: ' : 'New request: ')) + name, html: html, text: text };
+}
+function deliveredMail_(row) {
+  var p = parseRequest_(row), name = row.result_name || noExt_(row.video_name);
+  var asked = p.changes.length ? section_('What you asked for', '<ol style="margin:0;padding-left:22px;font-size:15px;line-height:1.7;color:#2B323D;' + F_ + '">' +
+    p.changes.map(function (c) { return '<li>' + esc_(c.title) + ' <span style="color:' + C_.soft + ';">(' + esc_(timeLabel_(c.time)) + ')</span></li>'; }).join('') + '</ol>') : '';
+  var html = shell_({
+    chip: chip_('Ready for review', 'blue'), heading: noExt_(name), sub: 'Your edit is finished. Watch it, then approve it or ask for changes.',
+    body: asked + section_('What to do next', '<div style="font-size:15px;line-height:1.6;color:#2B323D;' + F_ + '">Open the portal, press <b>Watch</b>, and use <b>Approve</b> or <b>Request changes</b>. You can add as many timed notes and screenshots as you like in one request.</div>'),
+    buttons: button_(row.result_url, 'Watch the edit', true) + button_(PORTAL_URL, 'Open the portal', false),
+    foot: 'File: ' + esc_(name)
+  });
+  return { subject: 'Ready for review: ' + noExt_(name), html: html, text: 'Your edit is ready for review: ' + row.result_url + '\n\nPortal: ' + PORTAL_URL };
+}
+function noteMail_(kind, row, note) {
+  var kinds = { staged: ['Staged', 'grey', 'Request staged on the Mac', 'The files are downloaded and ready to edit.'],
+                autostarted: ['Editing', 'amber', 'Auto-edit started', 'An edit session started on its own.'],
+                autoready: ['Review', 'blue', 'Auto-edit ready for your review', 'Nothing has been sent to the client.'],
+                autofailed: ['Needs you', 'amber', 'Auto-edit did not finish', 'Open a Claude session to finish it.'] }[kind];
+  var name = noExt_(row.video_name);
+  var html = shell_({
+    chip: chip_(kinds[0], kinds[1]), heading: kinds[2], sub: esc_(kinds[3]),
+    body: '<tr><td style="padding:18px 32px 0 32px;"><div style="font-size:18px;font-weight:700;color:' + C_.ink + ';' + F_ + '">' + esc_(name) + '</div></td></tr>' +
+      (note ? section_('Details', '<div style="font-size:15px;line-height:1.6;color:#2B323D;white-space:pre-wrap;' + F_ + '">' + esc_(String(note).slice(0, 700)) + '</div>') : ''),
+    buttons: button_(PORTAL_URL, 'Open the portal', true), foot: 'Request ' + esc_(String(row.id).slice(0, 8))
+  });
+  return { subject: kinds[2] + ': ' + name, html: html, text: kinds[2] + ': ' + name + (note ? '\n\n' + String(note).slice(0, 700) : '') };
+}
+// ===== EMAIL:END =====
+
+// ---- glue: sheet rows -> emails ----
+function rowObj_(r) { return { id: r[0], created: r[1], video_id: r[2], video_name: r[3], inspiration_ids: r[4], inspiration_names: r[5], change_type: r[6], notes: r[7], status: r[8], result_url: r[9], result_name: r[10] }; }
+function findRow_(id) { const rows = sheet_().getDataRange().getValues(); for (let i = 1; i < rows.length; i++) if (rows[i][0] === id) return rowObj_(rows[i]); return null; }
+function sendMail_(to, cc, m) { MailApp.sendEmail({ to: to, cc: cc || '', subject: m.subject, body: m.text, htmlBody: m.html, name: 'Edit Requests' }); }
+function sendRequestEmails_(row) {
+  const key = 'N_request_' + row.id; if (PROPS.getProperty(key)) return;
+  sendMail_(MAIL_MARTIN, '', requestMail_(row, 'martin'));
+  sendMail_(MAIL_VINCE, '', requestMail_(row, 'vince'));
+  PROPS.setProperty(key, '1');
+}
+// Called by the Mac poller. The caller names only a kind and a row id; recipients and wording come from here.
+function handleNotify_(b) {
+  const row = findRow_(String(b.id || '')); if (!row) return json_({ ok: false, error: 'id not found' });
+  const key = 'N_' + b.kind + '_' + row.id; if (PROPS.getProperty(key)) return json_({ ok: true, skipped: 'already sent' });
+  if (b.kind === 'delivered') {
+    if (row.status !== 'done' || !row.result_url) return json_({ ok: false, error: 'not delivered yet' });
+    sendMail_(MAIL_MARTIN, MAIL_VINCE, deliveredMail_(row));
+  } else if (['staged', 'autostarted', 'autoready', 'autofailed'].indexOf(b.kind) >= 0) {
+    sendMail_(MAIL_VINCE, '', noteMail_(b.kind, row, (b.kind === 'autoready' || b.kind === 'autofailed') ? b.note : ''));
+  } else return json_({ ok: false, error: 'unknown kind' });
+  PROPS.setProperty(key, '1');
+  return json_({ ok: true });
 }
 
 function json_(o) {
