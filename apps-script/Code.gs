@@ -371,26 +371,68 @@ function refsHtml_(p, att) {
   return parts ? section_('References', parts) : '';
 }
 
+// ---- time estimate, shown in the "we got your request" email ----
+// From the edits delivered so far (2026-10): a new build took 67, 70 and 160 minutes for videos of 5.4, 5.4 and 6.8 minutes;
+// a revision of an existing edit took 31 minutes. Raw uploads from the studio camera run a steady 7.6 MB per second,
+// so length comes from file size. Edits run one at a time, so requests already waiting are added on.
+var EDIT_TZ = 'America/New_York';
+function estMinutes_(row) {
+  if (/changes to a delivered/i.test(row.change_type || '')) return [30, 60];
+  var len = 0;
+  try { var sz = DriveApp.getFileById(row.video_id).getSize(); if (sz > 4e8) len = Math.min(15, sz / 7.6e6 / 60); } catch (e) {}
+  if (!len) return [60, 180];                                     // unknown length (small or unusual file)
+  return [Math.round(12 * len + 10), Math.round(24 * len + 15)];  // download + transcribe + build + render
+}
+function round5_(m) { return Math.max(5, Math.round(m / 5) * 5); }
+function durWords_(m) {
+  m = round5_(m); if (m < 60) return m + ' min';
+  var h = Math.floor(m / 60), r = m % 60; return h + ' hr' + (r ? ' ' + r + ' min' : '');
+}
+function estimate_(row) {
+  var mine = estMinutes_(row), ahead = 0, low = mine[0], high = mine[1];
+  try {
+    var rows = sheet_().getDataRange().getValues();
+    for (var i = 1; i < rows.length; i++) {
+      var r = rowObj_(rows[i]);
+      if (r.id === row.id || !r.video_id || (r.status !== 'new' && r.status !== 'editing')) continue;
+      if (String(r.created) >= String(row.created)) continue;
+      var e = estMinutes_(r); ahead++; low += e[0] * 0.6; high += e[1];   // the one in progress is partly done
+    }
+  } catch (e2) {}
+  var now = new Date().getTime(), a = new Date(now + round5_(low) * 60000), b = new Date(now + round5_(high) * 60000);
+  return { low: round5_(low), high: round5_(high), ahead: ahead,
+           from: Utilities.formatDate(a, EDIT_TZ, 'EEE h:mm a'), to: Utilities.formatDate(b, EDIT_TZ, 'EEE h:mm a') };
+}
+function estimateHtml_(est) {
+  if (!est) return '';
+  return section_('When to expect it',
+    '<div style="font-size:18px;font-weight:700;line-height:1.4;color:' + C_.ink + ';' + F_ + '">Between ' + esc_(est.from) + ' and ' + esc_(est.to) + ' ET</div>' +
+    '<div style="font-size:15px;line-height:1.55;color:#2B323D;margin-top:4px;' + F_ + '">About ' + esc_(durWords_(est.low)) + ' to ' + esc_(durWords_(est.high)) + ' from now. ' +
+    (est.ahead ? 'Edits run one at a time and ' + est.ahead + (est.ahead === 1 ? ' request is' : ' requests are') + ' ahead of this one.' : 'Nothing is ahead of it in the queue.') +
+    ' This is an estimate from past edits, not a promise.</div>');
+}
+function estimateText_(est) { return est ? '\n\nEstimated ready between ' + est.from + ' and ' + est.to + ' ET (about ' + durWords_(est.low) + ' to ' + durWords_(est.high) + ').' : ''; }
+
 // ---- the emails ----
-function requestMail_(row, forWho) {
+function requestMail_(row, forWho, est) {
   var p = parseRequest_(row), att = attachMap_(row), isChange = /changes to a delivered/i.test(row.change_type || '');
   var who = p.by ? p.by.split('@')[0] : '';
   var name = noExt_(row.video_name);
   var heading = forWho === 'martin' ? 'We got your request' : (isChange ? 'Changes requested' : 'New edit requested');
   var sub = forWho === 'martin'
-    ? 'It is queued. You will get another email with a review link when the edit is ready.'
+    ? 'It is queued. You will get another email with a review link the moment the edit is ready.'
     : esc_((who ? who.charAt(0).toUpperCase() + who.slice(1) : 'Someone') + ' sent this ' + (isChange ? 'revision' : 'new request') + '. It stages on your Mac within 5 minutes.');
   var meta = '<tr><td style="padding:18px 32px 0 32px;"><div style="font-size:13px;font-weight:700;letter-spacing:.04em;text-transform:uppercase;color:' + C_.soft + ';' + F_ + '">Video</div>' +
     '<div style="font-size:18px;font-weight:700;color:' + C_.ink + ';margin-top:4px;' + F_ + '">' + esc_(name) + '</div>' +
     '<div style="font-size:14px;color:' + C_.soft + ';margin-top:2px;' + F_ + '">' + esc_(String(row.change_type || '').replace(/^\S*\s?New build/, 'New build')) + '</div></td></tr>';
   var html = shell_({
     chip: chip_(forWho === 'martin' ? 'Received' : 'New request', forWho === 'martin' ? 'green' : 'amber'), heading: heading, sub: sub,
-    body: meta + changesHtml_(p, att) + briefHtml_(p, p.changes.length ? 'Overall direction' : 'The brief') + refsHtml_(p, att),
+    body: meta + estimateHtml_(est) + changesHtml_(p, att) + briefHtml_(p, p.changes.length ? 'Overall direction' : 'The brief') + refsHtml_(p, att),
     buttons: button_(PORTAL_URL, 'Open the portal', true),
     links: 'Portal: <a href="' + PORTAL_URL + '" style="color:' + C_.blue + ';">' + PORTAL_URL + '</a>',
     foot: 'Every request, with its attachments, is kept under <b>Request history</b> in the portal.'
   });
-  var text = heading + '\n' + name + '\n\n' + (p.changes.map(function (c) { return c.n + '. [' + timeLabel_(c.time) + '] ' + c.title; }).join('\n') || cleanBrief_(p.direction, 600)) + '\n\n' + PORTAL_URL;
+  var text = heading + '\n' + name + '\n\n' + (p.changes.map(function (c) { return c.n + '. [' + timeLabel_(c.time) + '] ' + c.title; }).join('\n') || cleanBrief_(p.direction, 600)) + estimateText_(est) + '\n\n' + PORTAL_URL;
   return { subject: (forWho === 'martin' ? 'We got your request: ' : (isChange ? 'Changes requested: ' : 'New request: ')) + name, html: html, text: text };
 }
 function deliveredMail_(row) {
@@ -428,8 +470,9 @@ function findRow_(id) { const rows = sheet_().getDataRange().getValues(); for (l
 function sendMail_(to, cc, m) { MailApp.sendEmail({ to: to, cc: cc || '', subject: m.subject, body: m.text, htmlBody: m.html, name: 'Edit Requests' }); }
 function sendRequestEmails_(row) {
   const key = 'N_request_' + row.id; if (PROPS.getProperty(key)) return;
-  sendMail_(MAIL_MARTIN, '', requestMail_(row, 'martin'));
-  sendMail_(MAIL_VINCE, '', requestMail_(row, 'vince'));
+  var est = null; try { est = estimate_(row); } catch (e) {}       // never let the estimate block the email
+  sendMail_(MAIL_MARTIN, '', requestMail_(row, 'martin', est));
+  sendMail_(MAIL_VINCE, '', requestMail_(row, 'vince', est));
   PROPS.setProperty(key, '1');
 }
 // Called by the Mac poller. The caller names only a kind and a row id; recipients and wording come from here.
