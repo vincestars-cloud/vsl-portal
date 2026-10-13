@@ -13,6 +13,7 @@ for f in "$Q"/*; do
   [ -f "$f" ] || continue
   RID=$(basename "$f"); DIR=$(ls -d ~/vsl-edit/inbox/$RID* 2>/dev/null | head -1)
   if [ -z "$CLAUDE" ] || [ ! -f "$DIR/BRIEF.md" ]; then mv "$f" "$FAILED/"; note autofailed "$RID" "Could not start: the Claude program or the staged files are missing."; continue; fi
+  note autostarted "$RID" ""        # the backend sends "We got your request" to the client (cc Vince) now that editing starts
   cd "$DIR" || continue
   rm -f REPORT.md OUTPUT.txt
   "$CLAUDE" -p --max-turns 400 --add-dir "$DIR" --add-dir ~/vsl-edit/kit --add-dir ~/openclaw/shared/skills/jos-motion-graphics --add-dir ~/Downloads \

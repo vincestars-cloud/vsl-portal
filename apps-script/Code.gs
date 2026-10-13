@@ -77,7 +77,7 @@ function checkAndNotify() {
   const rows = sheet_().getDataRange().getValues(); rows.shift();
   const fresh = rows.filter(r => r[8] === 'new' && !seen[r[0]]); // col8=status, col0=id
   if (!fresh.length) return;
-  fresh.forEach(r => { try { sendRequestEmails_(rowObj_(r)); } catch (e) {} notified.push(r[0]); });
+  fresh.forEach(r => { notified.push(r[0]); });   // emails are sent when the edit starts, not on a timer
   PROPS.setProperty('NOTIFIED', JSON.stringify(notified.slice(-300)));
 }
 
@@ -137,8 +137,7 @@ function doPost(e) {
       b.video_name || '', (b.inspiration_names || []).join(', '),
       b.change_type || '', b.notes || '', '', 'new', id
     ]);
-    // Immediate notification (HTML): Martin gets "we got it", Vince gets the full request. Fires even if the Mac is asleep.
-    try { sendRequestEmails_(findRow_(id)); } catch (mailErr) { /* non-fatal: the request is saved even if mail fails */ }
+    // No email here: "We got your request" goes out when the edit actually starts (notify kind 'autostarted'), Vince 2026-10-13.
     return json_({ ok: true, id: id });
   } catch (err) { return json_({ ok: false, error: String(err) }); }
 }
@@ -198,7 +197,7 @@ function listSubmissions_() {
   const direct = filesIn_(sub);
   return {
     ok: true,
-    caps: { upload: true, htmlmail: true, v: 4 },   // tells the portal this backend can save screenshots
+    caps: { upload: true, htmlmail: true, v: 5 },   // tells the portal this backend can save screenshots
     videos: direct.filter(f => f.isVideo),
     inspiration: direct.filter(f => !f.isVideo).concat(inspirationFiles_())
   };
@@ -408,7 +407,7 @@ function estimateHtml_(est) {
   return section_('When to expect it',
     '<div style="font-size:18px;font-weight:700;line-height:1.4;color:' + C_.ink + ';' + F_ + '">Between ' + esc_(est.from) + ' and ' + esc_(est.to) + ' ET</div>' +
     '<div style="font-size:15px;line-height:1.55;color:#2B323D;margin-top:4px;' + F_ + '">About ' + esc_(durWords_(est.low)) + ' to ' + esc_(durWords_(est.high)) + ' from now. ' +
-    (est.ahead ? 'Edits run one at a time and ' + est.ahead + (est.ahead === 1 ? ' request is' : ' requests are') + ' ahead of this one.' : 'Nothing is ahead of it in the queue.') +
+    (est.ahead ? 'Edits run one at a time and ' + est.ahead + (est.ahead === 1 ? ' request is' : ' requests are') + ' ahead of this one.' : 'It is being edited now.') +
     ' This is an estimate from past edits, not a promise.</div>');
 }
 function estimateText_(est) { return est ? '\n\nEstimated ready between ' + est.from + ' and ' + est.to + ' ET (about ' + durWords_(est.low) + ' to ' + durWords_(est.high) + ').' : ''; }
@@ -420,7 +419,7 @@ function requestMail_(row, forWho, est) {
   var name = noExt_(row.video_name);
   var heading = forWho === 'martin' ? 'We got your request' : (isChange ? 'Changes requested' : 'New edit requested');
   var sub = forWho === 'martin'
-    ? 'It is queued. You will get another email with a review link the moment the edit is ready.'
+    ? 'Editing has started. You will get another email with a review link the moment it is ready.'
     : esc_((who ? who.charAt(0).toUpperCase() + who.slice(1) : 'Someone') + ' sent this ' + (isChange ? 'revision' : 'new request') + '. It stages on your Mac within 5 minutes.');
   var meta = '<tr><td style="padding:18px 32px 0 32px;"><div style="font-size:13px;font-weight:700;letter-spacing:.04em;text-transform:uppercase;color:' + C_.soft + ';' + F_ + '">Video</div>' +
     '<div style="font-size:18px;font-weight:700;color:' + C_.ink + ';margin-top:4px;' + F_ + '">' + esc_(name) + '</div>' +
@@ -481,7 +480,9 @@ function handleNotify_(b) {
   if (b.kind === 'delivered') {
     if (row.status !== 'done' || !row.result_url) return json_({ ok: false, error: 'not delivered yet' });
     sendMail_(MAIL_MARTIN, MAIL_VINCE, deliveredMail_(row));
-  } else if (['staged', 'autostarted', 'autoready', 'autofailed'].indexOf(b.kind) >= 0) {
+  } else if (b.kind === 'autostarted') {
+    sendRequestEmails_(row);                                   // "We got your request" to Martin, cc Vince, with the time estimate
+  } else if (['staged', 'autoready', 'autofailed'].indexOf(b.kind) >= 0) {
     sendMail_(MAIL_VINCE, '', noteMail_(b.kind, row, (b.kind === 'autoready' || b.kind === 'autofailed') ? b.note : ''));
   } else return json_({ ok: false, error: 'unknown kind' });
   PROPS.setProperty(key, '1');
