@@ -198,7 +198,7 @@ function listSubmissions_() {
   const direct = filesIn_(sub);
   return {
     ok: true,
-    caps: { upload: true, htmlmail: true },   // tells the portal this backend can save screenshots
+    caps: { upload: true, htmlmail: true, v: 4 },   // tells the portal this backend can save screenshots
     videos: direct.filter(f => f.isVideo),
     inspiration: direct.filter(f => !f.isVideo).concat(inspirationFiles_())
   };
@@ -471,8 +471,7 @@ function sendMail_(to, cc, m) { MailApp.sendEmail({ to: to, cc: cc || '', subjec
 function sendRequestEmails_(row) {
   const key = 'N_request_' + row.id; if (PROPS.getProperty(key)) return;
   var est = null; try { est = estimate_(row); } catch (e) {}       // never let the estimate block the email
-  sendMail_(MAIL_MARTIN, '', requestMail_(row, 'martin', est));
-  sendMail_(MAIL_VINCE, '', requestMail_(row, 'vince', est));
+  sendMail_(MAIL_MARTIN, MAIL_VINCE, requestMail_(row, 'martin', est));   // one email; Vince is cc'd (his choice, 2026-10-13)
   PROPS.setProperty(key, '1');
 }
 // Called by the Mac poller. The caller names only a kind and a row id; recipients and wording come from here.

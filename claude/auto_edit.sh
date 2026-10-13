@@ -1,5 +1,6 @@
 #!/bin/bash
 # Auto-edit runner. launchd starts it whenever ~/vsl-edit/auto-queue holds a file (one per request signed by the login-protected portal).
+# Vince gets only the two client emails as a cc (request received, ready for review) plus a notice if an edit fails.
 # One edit at a time. When the edit passes a basic file check, THIS script delivers it to the client (Vince, 2026-10-12:
 # "it should auto complete and send to martin automatically, my review or approval isn't needed. It's his project").
 # The editing agent itself still cannot deliver, upload or email; it never buys images.
@@ -12,7 +13,6 @@ for f in "$Q"/*; do
   [ -f "$f" ] || continue
   RID=$(basename "$f"); DIR=$(ls -d ~/vsl-edit/inbox/$RID* 2>/dev/null | head -1)
   if [ -z "$CLAUDE" ] || [ ! -f "$DIR/BRIEF.md" ]; then mv "$f" "$FAILED/"; note autofailed "$RID" "Could not start: the Claude program or the staged files are missing."; continue; fi
-  note autostarted "$RID" ""
   cd "$DIR" || continue
   rm -f REPORT.md OUTPUT.txt
   "$CLAUDE" -p --max-turns 400 --add-dir "$DIR" --add-dir ~/vsl-edit/kit --add-dir ~/openclaw/shared/skills/jos-motion-graphics --add-dir ~/Downloads \
@@ -44,7 +44,6 @@ PROMPT
     # the file exists and decodes end to end: deliver (upload to Completions, mark done, email the client, cc Vince)
     if python3 "$POLL/poll.py" done "$RID" "$OUT" > "$DIR/deliver.log" 2>&1; then
       rm -f "$f"
-      python3 -c "import sys; sys.path.insert(0,'$POLL'); import poll; poll._send_mail(poll.NOTIFY_CC, None, 'Auto-edit delivered to the client: ' + sys.argv[1], open(sys.argv[2]).read()[:6000].split('\n'))" "$(basename "$OUT")" "$DIR/REPORT.md" >/dev/null 2>&1
     else mv "$f" "$FAILED/"; note autofailed "$RID" "The edit finished but delivery failed. File: $OUT. Log: $DIR/deliver.log"; fi
   else mv "$f" "$FAILED/"; note autofailed "$RID" "No deliverable file. The report or OUTPUT.txt is missing, or the video did not decode. Log: $DIR/auto_edit.log. The request is still marked editing."; fi
 done
