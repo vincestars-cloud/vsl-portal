@@ -27,7 +27,7 @@ NOTIFY_TO   = "martin@narrowgatefirm.com"
 NOTIFY_CC   = "starsvince@gmail.com"            # cc Vince (vince@inleap.ai bounces)
 
 def _get(action):
-    out = subprocess.run(["curl", "-sL", f"{API}?action={action}&t=1"], capture_output=True, text=True, timeout=40).stdout
+    out = subprocess.run(["curl", "-sL", "-m", "150", f"{API}?action={action}&t=1"], capture_output=True, text=True, timeout=160).stdout   # the backend sometimes takes 45-90 s
     return json.loads(out)
 
 def _post(payload):
