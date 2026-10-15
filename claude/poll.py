@@ -210,19 +210,12 @@ AUTO_QUEUE = os.path.expanduser("~/vsl-edit/auto-queue")
 RETRY_DIR = os.path.expanduser("~/vsl-edit/auto-retry")
 
 def retry_at_from_log(path):
-    """When to try a failed auto-edit again. A usage-limit message says when it resets ("resets 1:10pm (America/New_York)"):
-    retry 5 minutes after that. Anything else: 10 minutes from now. Returns epoch seconds."""
+    """When to try a failed auto-edit again: 4 hours after a usage-limit failure, 10 minutes after anything else. Epoch seconds."""
     import re, time, datetime as _dt
     txt = open(path, errors="ignore").read() if os.path.exists(path) else ""
     m = re.search(r"resets\s+(\d{1,2})(?::(\d{2}))?\s*([ap]m)", txt, re.I)
     if re.search(r"session limit|usage limit|rate limit|limit reached|overloaded", txt, re.I):
-        if m:
-            h, mi, ap = int(m.group(1)), int(m.group(2) or 0), m.group(3).lower()
-            h = (h % 12) + (12 if ap == "pm" else 0)
-            now = _dt.datetime.now(); t = now.replace(hour=h, minute=mi, second=0, microsecond=0)
-            if t <= now - _dt.timedelta(minutes=1): t += _dt.timedelta(days=1)
-            return int(t.timestamp()) + 300
-        return int(time.time()) + 1800
+        return int(time.time()) + 4 * 3600      # Vince 2026-10-15: on a usage limit, try again every 4 hours
     return int(time.time()) + 600
 
 def release_retries():

@@ -9,7 +9,7 @@ Q=~/vsl-edit/auto-queue; FAILED=~/vsl-edit/auto-failed; RETRY=~/vsl-edit/auto-re
 CLAUDE=$(ls -d ~/.vscode/extensions/anthropic.claude-code-*/resources/native-binary/claude 2>/dev/null | tail -1)
 mkdir -p "$Q" "$FAILED" "$RETRY"
 note() { python3 "$POLL/poll.py" mail "$1" "$2" "$3" >/dev/null 2>&1; }
-# A failed attempt is retried by itself: after a Claude usage limit, 5 minutes after it resets (does not count against the
+# A failed attempt is retried by itself: after a Claude usage limit, every 4 hours, up to 10 times (does not count against the
 # limit of attempts); any other failure, once more 10 minutes later. Only then is it parked in auto-failed and Vince told.
 fail() {
   local n; n=$(( $(cat "$DIR/.autoattempts" 2>/dev/null || echo 0) + 1 )); echo $n > "$DIR/.autoattempts"
