@@ -5,10 +5,23 @@
 # "it should auto complete and send to martin automatically, my review or approval isn't needed. It's his project").
 # The editing agent itself still cannot deliver, upload or email; it never buys images.
 export PATH="$HOME/.local/bin:/usr/local/bin:/usr/bin:/bin:$PATH"
-Q=~/vsl-edit/auto-queue; FAILED=~/vsl-edit/auto-failed; POLL=~/vsl-portal/claude
+Q=~/vsl-edit/auto-queue; FAILED=~/vsl-edit/auto-failed; RETRY=~/vsl-edit/auto-retry; POLL=~/vsl-portal/claude
 CLAUDE=$(ls -d ~/.vscode/extensions/anthropic.claude-code-*/resources/native-binary/claude 2>/dev/null | tail -1)
-mkdir -p "$Q" "$FAILED"
+mkdir -p "$Q" "$FAILED" "$RETRY"
 note() { python3 "$POLL/poll.py" mail "$1" "$2" "$3" >/dev/null 2>&1; }
+# A failed attempt is retried by itself: after a Claude usage limit, 5 minutes after it resets (does not count against the
+# limit of attempts); any other failure, once more 10 minutes later. Only then is it parked in auto-failed and Vince told.
+fail() {
+  local n; n=$(( $(cat "$DIR/.autoattempts" 2>/dev/null || echo 0) + 1 )); echo $n > "$DIR/.autoattempts"
+  local lim; lim=$(cat "$DIR/.limithits" 2>/dev/null || echo 0)
+  if grep -qiE "session limit|usage limit|rate limit|limit reached|overloaded" "$DIR/auto_edit.log" 2>/dev/null && [ $lim -lt 10 ]; then
+    python3 "$POLL/poll.py" retryat "$DIR/auto_edit.log" > "$RETRY/$RID"; rm -f "$f"; echo $(( n - 1 )) > "$DIR/.autoattempts"; echo $(( lim + 1 )) > "$DIR/.limithits"
+  elif [ $n -lt 2 ]; then
+    python3 "$POLL/poll.py" retryat /dev/null > "$RETRY/$RID"; rm -f "$f"
+  else
+    mv "$f" "$FAILED/"; note autofailed "$RID" "$1 (tried $n times)"
+  fi
+}
 for f in "$Q"/*; do
   [ -f "$f" ] || continue
   RID=$(basename "$f"); DIR=$(ls -d ~/vsl-edit/inbox/$RID* 2>/dev/null | head -1)
@@ -16,6 +29,7 @@ for f in "$Q"/*; do
   note autostarted "$RID" ""        # the backend sends "We got your request" to the client (cc Vince) now that editing starts
   cd "$DIR" || continue
   rm -f REPORT.md OUTPUT.txt
+  [ -f auto_edit.log ] && mv auto_edit.log "auto_edit.$(date +%m%d-%H%M).log"   # keep each attempt's log
   "$CLAUDE" -p --max-turns 400 --add-dir "$DIR" --add-dir ~/vsl-edit/kit --add-dir ~/openclaw/shared/skills/jos-motion-graphics --add-dir ~/Downloads \
     --allowedTools "Read" "Write" "Edit" "Glob" "Grep" "Bash(python3:*)" "Bash(node:*)" "Bash(npx:*)" "Bash(ffmpeg:*)" "Bash(ffprobe:*)" "Bash(cp:*)" "Bash(mv:*)" "Bash(mkdir:*)" "Bash(ls:*)" "Bash(cat:*)" "Bash(grep:*)" "Bash(head:*)" "Bash(tail:*)" "Bash(tr:*)" "Bash(rm:*)" "Bash(sleep:*)" "Bash(top:*)" "Bash(lsof:*)" "Bash(wc:*)" "Bash(date:*)" "Bash(echo:*)" "Bash(cd:*)" "Bash(find:*)" "Bash(sed:*)" "Bash(awk:*)" "Bash(cut:*)" "Bash(sort:*)" "Bash(uniq:*)" "Bash(diff:*)" "Bash(du:*)" "Bash(df:*)" "Bash(ps:*)" "Bash(stat:*)" "Bash(touch:*)" "Bash(chmod:*)" "Bash(ln:*)" "Bash(md5:*)" "Bash(which:*)" "Bash(test:*)" "Bash(~/vsl-edit/kit/hf_render.sh:*)" "Bash(~/vsl-edit/kit/hf_errcheck.sh:*)" "Bash($HOME/vsl-edit/kit/hf_render.sh:*)" "Bash($HOME/vsl-edit/kit/hf_errcheck.sh:*)" \
     --disallowedTools "Bash(*poll.py*)" "Bash(*rclone*)" "Bash(*git push*)" "Bash(*curl*)" "Bash(*wget*)" "Bash(*ssh*)" "Bash(*sudo*)" "Bash(*launchctl*)" "Bash(*osascript*)" "WebFetch" "WebSearch" \
@@ -45,6 +59,6 @@ PROMPT
     # the file exists and decodes end to end: deliver (upload to Completions, mark done, email the client, cc Vince)
     if python3 "$POLL/poll.py" done "$RID" "$OUT" > "$DIR/deliver.log" 2>&1; then
       rm -f "$f"
-    else mv "$f" "$FAILED/"; note autofailed "$RID" "The edit finished but delivery failed. File: $OUT. Log: $DIR/deliver.log"; fi
-  else mv "$f" "$FAILED/"; note autofailed "$RID" "No deliverable file. The report or OUTPUT.txt is missing, or the video did not decode. Log: $DIR/auto_edit.log. The request is still marked editing."; fi
+    else fail "The edit finished but delivery failed. File: $OUT. Log: $DIR/deliver.log"; fi
+  else fail "No deliverable file (report or OUTPUT.txt missing, or the video did not decode). Log: $DIR/auto_edit.log. The request is still marked editing."; fi
 done

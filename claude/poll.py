@@ -207,10 +207,40 @@ def from_portal(r):
 
 AUTO_QUEUE = os.path.expanduser("~/vsl-edit/auto-queue")
 
+RETRY_DIR = os.path.expanduser("~/vsl-edit/auto-retry")
+
+def retry_at_from_log(path):
+    """When to try a failed auto-edit again. A usage-limit message says when it resets ("resets 1:10pm (America/New_York)"):
+    retry 5 minutes after that. Anything else: 10 minutes from now. Returns epoch seconds."""
+    import re, time, datetime as _dt
+    txt = open(path, errors="ignore").read() if os.path.exists(path) else ""
+    m = re.search(r"resets\s+(\d{1,2})(?::(\d{2}))?\s*([ap]m)", txt, re.I)
+    if re.search(r"session limit|usage limit|rate limit|limit reached|overloaded", txt, re.I):
+        if m:
+            h, mi, ap = int(m.group(1)), int(m.group(2) or 0), m.group(3).lower()
+            h = (h % 12) + (12 if ap == "pm" else 0)
+            now = _dt.datetime.now(); t = now.replace(hour=h, minute=mi, second=0, microsecond=0)
+            if t <= now - _dt.timedelta(minutes=1): t += _dt.timedelta(days=1)
+            return int(t.timestamp()) + 300
+        return int(time.time()) + 1800
+    return int(time.time()) + 600
+
+def release_retries():
+    """Move auto-edits whose retry time has come back into the queue (the runner's launchd job watches it)."""
+    import time
+    if not os.path.isdir(RETRY_DIR): return
+    for rid in os.listdir(RETRY_DIR):
+        p = os.path.join(RETRY_DIR, rid)
+        try: due = int(open(p).read().strip() or 0)
+        except Exception: due = 0
+        if time.time() >= due:
+            os.makedirs(AUTO_QUEUE, exist_ok=True); os.replace(p, os.path.join(AUTO_QUEUE, rid)); print(f"auto: retrying {rid[:8]}")
+
 def auto():
     """Auto-poller: download + stage every real NEW request, then alert Vince by email.
     The creative edit still needs a Claude session — this just preps + notifies."""
     _lk = _lock()
+    release_retries()
     nr = [r for r in new_requests() if r.get("video_id")]   # real edits only (skip empty test rows)
     # Standby machine (VSL_STANDBY_MIN=15 in its LaunchAgent): only take a request the main Mac has left unclaimed that long.
     wait_min = float(os.environ.get("VSL_STANDBY_MIN", "0") or 0)
@@ -302,6 +332,7 @@ if __name__ == "__main__":
     elif a[0] == "auto": auto()
     elif a[0] == "notify": notify()
     elif a[0] == "done" and len(a) > 2: done(a[1], a[2], "--no-email" not in a)
+    elif a[0] == "retryat" and len(a) > 1: print(retry_at_from_log(a[1]))
     elif a[0] == "mail" and len(a) > 2:
         if not apps_notify(a[1], a[2], " ".join(a[3:])):   # backend without the HTML code yet: plain mail to Vince
             _send_mail(NOTIFY_CC, None, f"VSL Edit Portal: {a[1]} ({a[2][:8]})", [" ".join(a[3:]) or a[1]])

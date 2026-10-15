@@ -132,7 +132,10 @@ def downloads():
     done = {f["name"]: f.get("size") for f in poll._get("completions").get("files", [])}
     cutoff = time.time() - DAYS * 86400
     out = []
-    for f in os.listdir(DOWNLOADS):
+    try: names = os.listdir(DOWNLOADS)
+    except PermissionError:                       # macOS blocks background jobs from ~/Downloads unless python3 has Full Disk Access
+        log("downloads: skipped, no permission to read ~/Downloads from the background job"); return []
+    for f in names:
         p = os.path.join(DOWNLOADS, f)
         if f in done and os.path.isfile(p) and os.path.getsize(p) == done[f] and os.path.getmtime(p) < cutoff: out.append(p)
     return out
