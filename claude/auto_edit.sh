@@ -14,6 +14,13 @@ note() { python3 "$POLL/poll.py" mail "$1" "$2" "$3" >/dev/null 2>&1; }
 fail() {
   local n; n=$(( $(cat "$DIR/.autoattempts" 2>/dev/null || echo 0) + 1 )); echo $n > "$DIR/.autoattempts"
   local lim; lim=$(cat "$DIR/.limithits" 2>/dev/null || echo 0)
+  if grep -qiE "failed to authenticate|oauth|not logged in|please run /login" "$DIR/auto_edit.log" 2>/dev/null; then
+    # Claude is signed out on this Mac: every edit would fail. Retry every 4 hours and tell Vince once a day.
+    python3 "$POLL/poll.py" retryat "$DIR/auto_edit.log" > "$RETRY/$RID"; rm -f "$f"; echo $(( n - 1 )) > "$DIR/.autoattempts"
+    M=~/vsl-edit/.auth_mailed; if [ ! -f "$M" ] || [ $(( $(date +%s) - $(stat -f %m "$M") )) -gt 86400 ]; then touch "$M"
+      note autofailed "$RID" "Claude is signed out on the Mac mini, so auto-edits cannot run. Open VS Code (Claude Code) on the Mac mini and sign in; queued edits retry every 4 hours."; fi
+    return
+  fi
   if grep -qiE "session limit|usage limit|rate limit|limit reached|overloaded" "$DIR/auto_edit.log" 2>/dev/null && [ $lim -lt 10 ]; then
     python3 "$POLL/poll.py" retryat "$DIR/auto_edit.log" > "$RETRY/$RID"; rm -f "$f"; echo $(( n - 1 )) > "$DIR/.autoattempts"; echo $(( lim + 1 )) > "$DIR/.limithits"
   elif [ $n -lt 2 ]; then
@@ -51,14 +58,16 @@ Hard rules for this unattended run:
    - Lint and snapshots: npx --yes hyperframes@0.8.134 lint . / snapshot . --at <times>  (run from the project dir).
    Shell output redirection (> file) is also blocked: create files with the Write tool.
    If a command is denied, do not keep retrying it: find another allowed way or note it in REPORT.md.
-5. Finish by copying the final mp4 to ~/Downloads, writing its full path as the only line of $DIR/OUTPUT.txt (name it like the skill says, _v1 for a new build, the next _vN for a revision), and writing $DIR/REPORT.md: output file name, what you built beat by beat, weak spots, invented figures, anything you ignored in the brief, and any conflict between this brief and the skill.
+5. Before you finish, run the JavaScript error check on every build and look at a contact sheet of the FINAL render: the runner refuses to deliver a video with stretches of empty background (a broken scene), so fix any blank scene first.
+6. Finish by copying the final mp4 to ~/Downloads, writing its full path as the only line of $DIR/OUTPUT.txt (name it after the video's topic like Video12_TopicWords_v1.mp4, never a generic name like out.mp4; the next _vN for a revision), and writing $DIR/REPORT.md: output file name, what you built beat by beat, weak spots, invented figures, anything you ignored in the brief, and any conflict between this brief and the skill.
 PROMPT
   PID=$!; ( sleep 14400; kill $PID 2>/dev/null ) & WD=$!; wait $PID; kill $WD 2>/dev/null
   OUT=$(head -1 "$DIR/OUTPUT.txt" 2>/dev/null | sed "s|^~|$HOME|")
-  if [ -s "$DIR/REPORT.md" ] && [ -n "$OUT" ] && [ -s "$OUT" ] && ffmpeg -v error -i "$OUT" -f null - 2>/dev/null; then
+  QC=""; [ -n "$OUT" ] && [ -s "$OUT" ] && QC=$(python3 "$POLL/poll.py" qc "$OUT" 2>&1); echo "$QC" > "$DIR/qc.log"
+  if [ -s "$DIR/REPORT.md" ] && [ -n "$OUT" ] && [ -s "$OUT" ] && ffmpeg -v error -i "$OUT" -f null - 2>/dev/null && [ "${QC%% *}" = "PASS" ]; then
     # the file exists and decodes end to end: deliver (upload to Completions, mark done, email the client, cc Vince)
     if python3 "$POLL/poll.py" done "$RID" "$OUT" > "$DIR/deliver.log" 2>&1; then
       rm -f "$f"
     else fail "The edit finished but delivery failed. File: $OUT. Log: $DIR/deliver.log"; fi
-  else fail "No deliverable file (report or OUTPUT.txt missing, or the video did not decode). Log: $DIR/auto_edit.log. The request is still marked editing."; fi
+  else fail "Not delivered: no deliverable file, or it failed the content check ($QC). Log: $DIR/auto_edit.log. The request is still marked editing."; fi
 done

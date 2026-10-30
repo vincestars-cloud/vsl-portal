@@ -214,7 +214,7 @@ def retry_at_from_log(path):
     import re, time, datetime as _dt
     txt = open(path, errors="ignore").read() if os.path.exists(path) else ""
     m = re.search(r"resets\s+(\d{1,2})(?::(\d{2}))?\s*([ap]m)", txt, re.I)
-    if re.search(r"session limit|usage limit|rate limit|limit reached|overloaded", txt, re.I):
+    if re.search(r"session limit|usage limit|rate limit|limit reached|overloaded|failed to authenticate|oauth|not logged in|please run /login", txt, re.I):
         return int(time.time()) + 4 * 3600      # Vince 2026-10-15: on a usage limit, try again every 4 hours
     return int(time.time()) + 600
 
@@ -288,10 +288,36 @@ def auto():
                     "You'll get a second email with the review link when it is finished.", "",
                     "Portal: https://edits.vincestars.com/", "", "- VSL Edit Portal"])
 
+def qc(path):
+    """Content check before anything reaches the client. A JavaScript error in a build leaves whole scenes as empty background
+    (on 2026-10-23 a video with ~4 blank minutes was delivered). Sample a frame every 2 s; a frame is 'empty' when it is
+    nearly flat (very low detail). Fails if over 20% of frames are empty or any run of empty frames lasts 10 s or more."""
+    import subprocess, struct
+    W, H = 64, 36
+    raw = subprocess.run(["ffmpeg", "-nostdin", "-v", "error", "-i", path, "-vf", f"fps=1/2,scale={W}:{H},format=gray", "-f", "rawvideo", "-"],
+                         capture_output=True, timeout=1800).stdout
+    n = len(raw) // (W * H)
+    if n < 3: return False, "could not read frames"
+    empty, run, worst = 0, 0, 0
+    for i in range(n):
+        px = raw[i * W * H:(i + 1) * W * H]
+        mean = sum(px) / len(px); var = sum((p - mean) ** 2 for p in px) / len(px)
+        edges = sum(abs(px[j] - px[j + 1]) for j in range(0, len(px) - 1) if (j + 1) % W) / len(px)
+        flat = var < 60 or edges < 1.2
+        empty += flat; run = run + 1 if flat else 0; worst = max(worst, run)
+    share = empty / n
+    ok = share <= 0.20 and worst * 2 < 10
+    return ok, f"{empty}/{n} sampled frames look empty ({share:.0%}), longest empty stretch {worst * 2} s"
+
 def _free_name(path):
     """Never overwrite an earlier delivery: if Completions already holds a different file with this name, move to the next _vN."""
     import re, shutil
+    import re
     name = os.path.basename(path)
+    if not re.search(r"_v\d+\.[A-Za-z0-9]+$", name):     # a generic name like out.mp4 must never reach Completions
+        import shutil
+        new = os.path.join(os.path.dirname(path), os.path.splitext(name)[0] + "_v1" + os.path.splitext(name)[1])
+        shutil.copy2(path, new); path, name = new, os.path.basename(new)
     try: have = {f["name"]: f.get("size") for f in _get("completions").get("files", [])}
     except Exception: return path
     if name not in have or have[name] == os.path.getsize(path): return path
@@ -325,6 +351,8 @@ if __name__ == "__main__":
     elif a[0] == "auto": auto()
     elif a[0] == "notify": notify()
     elif a[0] == "done" and len(a) > 2: done(a[1], a[2], "--no-email" not in a)
+    elif a[0] == "qc" and len(a) > 1:
+        ok, why = qc(a[1]); print(("PASS " if ok else "FAIL ") + why); sys.exit(0 if ok else 3)
     elif a[0] == "retryat" and len(a) > 1: print(retry_at_from_log(a[1]))
     elif a[0] == "mail" and len(a) > 2:
         if not apps_notify(a[1], a[2], " ".join(a[3:])):   # backend without the HTML code yet: plain mail to Vince
