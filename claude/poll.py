@@ -214,7 +214,7 @@ def retry_at_from_log(path):
     import re, time, datetime as _dt
     txt = open(path, errors="ignore").read() if os.path.exists(path) else ""
     m = re.search(r"resets\s+(\d{1,2})(?::(\d{2}))?\s*([ap]m)", txt, re.I)
-    if re.search(r"session limit|usage limit|rate limit|limit reached|overloaded|failed to authenticate|oauth|not logged in|please run /login", txt, re.I):
+    if re.search(r"session limit|usage limit|rate limit|limit reached|hit your|-hour limit|weekly limit|overloaded|failed to authenticate|oauth|not logged in|please run /login", txt, re.I):
         return int(time.time()) + 4 * 3600      # Vince 2026-10-15: on a usage limit, try again every 4 hours
     return int(time.time()) + 600
 

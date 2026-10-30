@@ -197,7 +197,7 @@ function listSubmissions_() {
   const direct = filesIn_(sub);
   return {
     ok: true,
-    caps: { upload: true, htmlmail: true, v: 5 },   // tells the portal this backend can save screenshots
+    caps: { upload: true, htmlmail: true, v: 6 },   // tells the portal this backend can save screenshots
     videos: direct.filter(f => f.isVideo),
     inspiration: direct.filter(f => !f.isVideo).concat(inspirationFiles_())
   };
@@ -476,7 +476,8 @@ function sendRequestEmails_(row) {
 // Called by the Mac poller. The caller names only a kind and a row id; recipients and wording come from here.
 function handleNotify_(b) {
   const row = findRow_(String(b.id || '')); if (!row) return json_({ ok: false, error: 'id not found' });
-  const key = 'N_' + b.kind + '_' + row.id; if (PROPS.getProperty(key)) return json_({ ok: true, skipped: 'already sent' });
+  // delivered: once per delivered FILE, so a corrected version (v2, v3) emails again
+  const key = 'N_' + b.kind + '_' + row.id + (b.kind === 'delivered' ? '_' + (row.result_url || '') : ''); if (PROPS.getProperty(key)) return json_({ ok: true, skipped: 'already sent' });
   if (b.kind === 'delivered') {
     if (row.status !== 'done' || !row.result_url) return json_({ ok: false, error: 'not delivered yet' });
     sendMail_(MAIL_MARTIN, MAIL_VINCE, deliveredMail_(row));

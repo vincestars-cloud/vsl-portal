@@ -21,7 +21,7 @@ fail() {
       note autofailed "$RID" "Claude is signed out on the Mac mini, so auto-edits cannot run. Open VS Code (Claude Code) on the Mac mini and sign in; queued edits retry every 4 hours."; fi
     return
   fi
-  if grep -qiE "session limit|usage limit|rate limit|limit reached|overloaded" "$DIR/auto_edit.log" 2>/dev/null && [ $lim -lt 10 ]; then
+  if grep -qiE "session limit|usage limit|rate limit|limit reached|hit your|-hour limit|weekly limit|overloaded" "$DIR/auto_edit.log" 2>/dev/null && [ $lim -lt 10 ]; then
     python3 "$POLL/poll.py" retryat "$DIR/auto_edit.log" > "$RETRY/$RID"; rm -f "$f"; echo $(( n - 1 )) > "$DIR/.autoattempts"; echo $(( lim + 1 )) > "$DIR/.limithits"
   elif [ $n -lt 2 ]; then
     python3 "$POLL/poll.py" retryat /dev/null > "$RETRY/$RID"; rm -f "$f"
@@ -58,6 +58,7 @@ Hard rules for this unattended run:
    - Lint and snapshots: npx --yes hyperframes@0.8.134 lint . / snapshot . --at <times>  (run from the project dir).
    Shell output redirection (> file) is also blocked: create files with the Write tool.
    If a command is denied, do not keep retrying it: find another allowed way or note it in REPORT.md.
+7. Martin's standing rule for ALL his videos (whatever this brief says): NO words written over the speaker. That means no kinetic titles on a gradient over him, no quoted sentences or question pills at the bottom, no captions of what he is saying. Text belongs on full-screen graphics (big-idea cards, charts, diagrams, highlighted source pages). Allowed over the speaker: his name tag, definition cards, the CTA steps, and small cards that show a LIST he is naming. Before finishing, check every scene over the speaker against this rule.
 5. Before you finish, run the JavaScript error check on every build and look at a contact sheet of the FINAL render: the runner refuses to deliver a video with stretches of empty background (a broken scene), so fix any blank scene first.
 6. Finish by copying the final mp4 to ~/Downloads, writing its full path as the only line of $DIR/OUTPUT.txt (name it after the video's topic like Video12_TopicWords_v1.mp4, never a generic name like out.mp4; the next _vN for a revision), and writing $DIR/REPORT.md: output file name, what you built beat by beat, weak spots, invented figures, anything you ignored in the brief, and any conflict between this brief and the skill.
 PROMPT
