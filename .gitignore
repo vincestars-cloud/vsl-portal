@@ -4,3 +4,4 @@ __pycache__/
 dbg*.html
 .portal_secrets.json
 .wrangler/
+apps-script-live/
