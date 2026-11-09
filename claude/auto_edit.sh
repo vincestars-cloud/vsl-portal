@@ -8,6 +8,9 @@ export PATH="$HOME/.local/bin:/usr/local/bin:/usr/bin:/bin:$PATH"
 Q=~/vsl-edit/auto-queue; FAILED=~/vsl-edit/auto-failed; RETRY=~/vsl-edit/auto-retry; POLL=~/vsl-portal/claude
 CLAUDE=$(ls -d ~/.vscode/extensions/anthropic.claude-code-*/resources/native-binary/claude 2>/dev/null | tail -1)
 mkdir -p "$Q" "$FAILED" "$RETRY"
+# Keep the Mac from idling while an edit or delivery runs (an 11.5 h stall overnight 11-08, display off, Safari at 11 GB).
+/usr/bin/caffeinate -i -w $$ &
+step() { echo "$(date '+%m-%d %H:%M:%S') $*" >> "$DIR/runner.log"; }   # timestamp each stage, so a delay shows where it sat
 note() { python3 "$POLL/poll.py" mail "$1" "$2" "$3" >/dev/null 2>&1; }
 # A failed attempt is retried by itself: after a Claude usage limit, every 4 hours, up to 10 times (does not count against the
 # limit of attempts); any other failure, once more 10 minutes later. Only then is it parked in auto-failed and Vince told.
@@ -62,13 +65,14 @@ Hard rules for this unattended run:
 5. Before you finish, run the JavaScript error check on every build and look at a contact sheet of the FINAL render: the runner refuses to deliver a video with stretches of empty background (a broken scene), so fix any blank scene first.
 6. Finish by copying the final mp4 to ~/Downloads, writing its full path as the only line of $DIR/OUTPUT.txt (name it after the video's topic like Video12_TopicWords_v1.mp4, never a generic name like out.mp4; the next _vN for a revision), and writing $DIR/REPORT.md: output file name, what you built beat by beat, weak spots, invented figures, anything you ignored in the brief, and any conflict between this brief and the skill.
 PROMPT
-  PID=$!; ( sleep 14400; kill $PID 2>/dev/null ) & WD=$!; wait $PID; kill $WD 2>/dev/null
+  PID=$!; step "edit started (pid $PID)"; ( sleep 14400; kill $PID 2>/dev/null ) & WD=$!; wait $PID; kill $WD 2>/dev/null; step "edit session ended"
   OUT=$(head -1 "$DIR/OUTPUT.txt" 2>/dev/null | sed "s|^~|$HOME|")
-  QC=""; [ -n "$OUT" ] && [ -s "$OUT" ] && QC=$(python3 "$POLL/poll.py" qc "$OUT" 2>&1); echo "$QC" > "$DIR/qc.log"
-  if [ -s "$DIR/REPORT.md" ] && [ -n "$OUT" ] && [ -s "$OUT" ] && ffmpeg -v error -i "$OUT" -f null - 2>/dev/null && [ "${QC%% *}" = "PASS" ]; then
+  QC=""; [ -n "$OUT" ] && [ -s "$OUT" ] && QC=$(python3 "$POLL/poll.py" qc "$OUT" 2>&1); echo "$QC" > "$DIR/qc.log"; step "qc: ${QC%% *}"
+  if [ -s "$DIR/REPORT.md" ] && [ -n "$OUT" ] && [ -s "$OUT" ] && perl -e 'alarm shift; exec @ARGV' 900 ffmpeg -nostdin -v error -i "$OUT" -f null - </dev/null 2>/dev/null && step "decode ok" && [ "${QC%% *}" = "PASS" ]; then
     # the file exists and decodes end to end: deliver (upload to Completions, mark done, email the client, cc Vince)
+    step "delivering"
     if python3 "$POLL/poll.py" done "$RID" "$OUT" > "$DIR/deliver.log" 2>&1; then
-      rm -f "$f"
+      step "delivered"; rm -f "$f"
     else fail "The edit finished but delivery failed. File: $OUT. Log: $DIR/deliver.log"; fi
   else fail "Not delivered: no deliverable file, or it failed the content check ($QC). Log: $DIR/auto_edit.log. The request is still marked editing."; fi
 done

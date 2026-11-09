@@ -335,7 +335,7 @@ def done(rid, path, send_email=True):
     subprocess.run(["rclone", "copy", path, REMOTE, "--drive-root-folder-id", DONE_FOLDER_ID,
                     "--timeout", "60s", "--retries", "5", "--low-level-retries", "5"], check=True, timeout=1800)
     link = subprocess.run(["rclone", "link", REMOTE + name, "--drive-root-folder-id", DONE_FOLDER_ID],
-                          capture_output=True, text=True).stdout.strip()
+                          capture_output=True, text=True, timeout=300).stdout.strip()
     update(rid, "done", link, name)
     print(f"uploaded {name} -> Completions\n{link}")
     if send_email and not apps_notify("delivered", rid):
