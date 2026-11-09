@@ -61,18 +61,28 @@ Hard rules for this unattended run:
    - Lint and snapshots: npx --yes hyperframes@0.8.134 lint . / snapshot . --at <times>  (run from the project dir).
    Shell output redirection (> file) is also blocked: create files with the Write tool.
    If a command is denied, do not keep retrying it: find another allowed way or note it in REPORT.md.
-7. Martin's standing rule for ALL his videos (whatever this brief says): NO words written over the speaker. That means no kinetic titles on a gradient over him, no quoted sentences or question pills at the bottom, no captions of what he is saying. Text belongs on full-screen graphics (big-idea cards, charts, diagrams, highlighted source pages). Allowed over the speaker: his name tag, definition cards, the CTA steps, and small cards that show a LIST he is naming. Before finishing, check every scene over the speaker against this rule.
+7. Martin's standing rule for ALL his videos: NO words written over the speaker, UNLESS this brief itself asks for captions or a text overlay over him (then the newest brief wins: build what it asks, captions to the AD SUBTITLE SPEC in the video-render-pipeline skill, and say so in REPORT.md). That means no kinetic titles on a gradient over him, no quoted sentences or question pills at the bottom, no captions of what he is saying. Text belongs on full-screen graphics (big-idea cards, charts, diagrams, highlighted source pages). Allowed over the speaker: his name tag, definition cards, the CTA steps, and small cards that show a LIST he is naming. Before finishing, check every scene over the speaker against this rule.
 5. Before you finish, run the JavaScript error check on every build and look at a contact sheet of the FINAL render: the runner refuses to deliver a video with stretches of empty background (a broken scene), so fix any blank scene first.
-6. Finish by copying the final mp4 to ~/Downloads, writing its full path as the only line of $DIR/OUTPUT.txt (name it after the video's topic like Video12_TopicWords_v1.mp4, never a generic name like out.mp4; the next _vN for a revision), and writing $DIR/REPORT.md: output file name, what you built beat by beat, weak spots, invented figures, anything you ignored in the brief, and any conflict between this brief and the skill.
+6. Finish by copying the final mp4 to ~/Downloads, writing its full path as the first line of $DIR/OUTPUT.txt (name it after the video's topic like Video12_TopicWords_v1.mp4, never a generic name like out.mp4; the next _vN for a revision). If the brief asks for more than one format (for example 9:16 and 1:1), build every one and put each extra file's full path on its own further line (e.g. Video12_TopicWords_1x1_v1.mp4); every listed file is delivered, and writing $DIR/REPORT.md: output file name, what you built beat by beat, weak spots, invented figures, anything you ignored in the brief, and any conflict between this brief and the skill.
 PROMPT
   PID=$!; step "edit started (pid $PID)"; ( sleep 14400; kill $PID 2>/dev/null ) & WD=$!; wait $PID; kill $WD 2>/dev/null; step "edit session ended"
   OUT=$(head -1 "$DIR/OUTPUT.txt" 2>/dev/null | sed "s|^~|$HOME|")
-  QC=""; [ -n "$OUT" ] && [ -s "$OUT" ] && QC=$(python3 "$POLL/poll.py" qc "$OUT" 2>&1); echo "$QC" > "$DIR/qc.log"; step "qc: ${QC%% *}"
-  if [ -s "$DIR/REPORT.md" ] && [ -n "$OUT" ] && [ -s "$OUT" ] && perl -e 'alarm shift; exec @ARGV' 900 ffmpeg -nostdin -v error -i "$OUT" -f null - </dev/null 2>/dev/null && step "decode ok" && [ "${QC%% *}" = "PASS" ]; then
-    # the file exists and decodes end to end: deliver (upload to Completions, mark done, email the client, cc Vince)
-    step "delivering"
-    if python3 "$POLL/poll.py" done "$RID" "$OUT" > "$DIR/deliver.log" 2>&1; then
+  EXTRA=(); while IFS= read -r x; do x=$(echo "$x" | sed "s|^~|$HOME|"); [ -n "$x" ] && EXTRA+=("$x"); done < <(tail -n +2 "$DIR/OUTPUT.txt" 2>/dev/null)
+  # every listed file must exist, pass the content check and decode end to end; extra formats (1:1 etc.) are checked like the main one
+  QC=""; OK=1; [ -n "$OUT" ] || OK=0
+  for x in "$OUT" "${EXTRA[@]}"; do
+    [ "$OK" = 1 ] || break
+    q=""; [ -s "$x" ] && q=$(python3 "$POLL/poll.py" qc "$x" 2>&1); QC="$QC$(basename "$x"): $q
+"
+    { [ -s "$x" ] && [ "${q%% *}" = "PASS" ] && perl -e 'alarm shift; exec @ARGV' 900 ffmpeg -nostdin -v error -i "$x" -f null - </dev/null 2>/dev/null; } || OK=0
+  done
+  echo "$QC" > "$DIR/qc.log"; step "qc+decode: $([ "$OK" = 1 ] && echo PASS || echo FAIL) (${#EXTRA[@]} extra)"
+  if [ -s "$DIR/REPORT.md" ] && [ "$OK" = 1 ]; then
+    # deliver (upload to Completions, mark done, email the client, cc Vince): extra formats first, the main file LAST so the portal row shows it
+    step "delivering"; : > "$DIR/deliver.log"; DOK=1
+    for x in "${EXTRA[@]}" "$OUT"; do python3 "$POLL/poll.py" done "$RID" "$x" >> "$DIR/deliver.log" 2>&1 || { DOK=0; break; }; done
+    if [ "$DOK" = 1 ]; then
       step "delivered"; rm -f "$f"
-    else fail "The edit finished but delivery failed. File: $OUT. Log: $DIR/deliver.log"; fi
+    else fail "The edit finished but delivery failed. Files: $OUT ${EXTRA[*]}. Log: $DIR/deliver.log"; fi
   else fail "Not delivered: no deliverable file, or it failed the content check ($QC). Log: $DIR/auto_edit.log. The request is still marked editing."; fi
 done
