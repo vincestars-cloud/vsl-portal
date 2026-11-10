@@ -9,7 +9,7 @@ Q=~/vsl-edit/auto-queue; FAILED=~/vsl-edit/auto-failed; RETRY=~/vsl-edit/auto-re
 CLAUDE=$(ls -d ~/.vscode/extensions/anthropic.claude-code-*/resources/native-binary/claude 2>/dev/null | tail -1)
 mkdir -p "$Q" "$FAILED" "$RETRY"
 # Keep the Mac from idling while an edit or delivery runs (an 11.5 h stall overnight 11-08, display off, Safari at 11 GB).
-/usr/bin/caffeinate -i -w $$ &
+/usr/bin/caffeinate -d -i -w $$ &   # -d too: with the display off, ffmpeg QC/decode crawled 15+ min (11-10, Ad 3 + Ad 6) and finished seconds after the display woke
 step() { echo "$(date '+%m-%d %H:%M:%S') $*" >> "$DIR/runner.log"; }   # timestamp each stage, so a delay shows where it sat
 note() { python3 "$POLL/poll.py" mail "$1" "$2" "$3" >/dev/null 2>&1; }
 # A failed attempt is retried by itself: after a Claude usage limit, every 4 hours, up to 10 times (does not count against the
