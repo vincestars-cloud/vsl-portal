@@ -215,6 +215,13 @@ def retry_at_from_log(path):
     txt = open(path, errors="ignore").read() if os.path.exists(path) else ""
     m = re.search(r"resets\s+(\d{1,2})(?::(\d{2}))?\s*([ap]m)", txt, re.I)
     if re.search(r"session limit|usage limit|rate limit|limit reached|hit your|-hour limit|weekly limit|overloaded|failed to authenticate|oauth|not logged in|please run /login", txt, re.I):
+        if m:   # the limit message names its reset ("resets 3pm"): retry 3 min after it, not 4 h after the failure (11-10)
+            h = int(m.group(1)) % 12 + (12 if m.group(3).lower() == "pm" else 0)
+            now = _dt.datetime.now()
+            r = now.replace(hour=h, minute=int(m.group(2) or 0), second=0, microsecond=0)
+            if r <= now: r += _dt.timedelta(days=1)
+            if r - now <= _dt.timedelta(hours=6):
+                return int(r.timestamp()) + 180
         return int(time.time()) + 4 * 3600      # Vince 2026-10-15: on a usage limit, try again every 4 hours
     return int(time.time()) + 600
 
