@@ -69,6 +69,10 @@ PROMPT
   OUT=$(head -1 "$DIR/OUTPUT.txt" 2>/dev/null | sed "s|^~|$HOME|")
   EXTRA=(); while IFS= read -r x; do x=$(echo "$x" | sed "s|^~|$HOME|"); [ -n "$x" ] && EXTRA+=("$x"); done < <(tail -n +2 "$DIR/OUTPUT.txt" 2>/dev/null)
   # every listed file must exist, pass the content check and decode end to end; extra formats (1:1 etc.) are checked like the main one
+  # The lock screen turns the display off after ~10 s even while caffeinate -d holds its assertion, and with the display off the
+  # decode check crawled past its 15 min limit (11-13, Ad 2 v5: files decode in 3 s). So signal user activity every 8 s
+  # (caffeinate -u wakes the display) while the checks and delivery run.
+  ( while :; do /usr/bin/caffeinate -u -t 2; sleep 8; done ) & WAKE=$!
   QC=""; OK=1; [ -n "$OUT" ] || OK=0
   for x in "$OUT" "${EXTRA[@]}"; do
     [ "$OK" = 1 ] || break
@@ -85,4 +89,5 @@ PROMPT
       step "delivered"; rm -f "$f"
     else fail "The edit finished but delivery failed. Files: $OUT ${EXTRA[*]}. Log: $DIR/deliver.log"; fi
   else fail "Not delivered: no deliverable file, or it failed the content check ($QC). Log: $DIR/auto_edit.log. The request is still marked editing."; fi
+  pkill -P $WAKE 2>/dev/null; kill $WAKE 2>/dev/null
 done
